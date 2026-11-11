@@ -1,6 +1,3 @@
-FROM nginx:alpine
-
-RUN rm -rf /usr/share/nginx/html/*
-COPY . /usr/share/nginx/html
+FROM php:8.2-apache
+COPY . /var/www/html/
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
