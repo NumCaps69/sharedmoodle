@@ -1,1 +1,1 @@
-# sharemoodle
+# sharedmoodle
