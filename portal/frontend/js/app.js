@@ -65,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="text-align:center; padding: 3rem 0;">
           <h1 style="font-size:2.5rem; margin-bottom:0.5rem;">Votre Moodle, hébergé et managé</h1>
           <p style="color:var(--fg-muted); font-size:1.1rem; max-width:550px; margin:0 auto 2rem;">
-            Obtenez votre propre instance Moodle en quelques secondes. Zéro configuration, isolation complète, sous-domaine dédié.
+            Testez un portail simple pour gérer votre compte, votre abonnement et accéder à Moodle.
           </p>
           <a href="#register" class="btn btn-primary" style="font-size:1rem; padding:0.85rem 2rem;">
             Commencer gratuitement
@@ -137,7 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="auth-container">
         <div class="auth-card">
           <h1>Inscription</h1>
-          <p class="subtitle">Créez votre instance Moodle en 30 secondes</p>
+          <p class="subtitle">Créez votre compte SharedMoodle</p>
           <div id="register-alert"></div>
           <form id="register-form">
             <div class="form-group">
@@ -147,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="form-group">
               <label for="organisation">Nom de l'organisation</label>
               <input type="text" id="organisation" class="form-control" placeholder="Mon École" required>
-              <small style="color:var(--fg-muted);font-size:0.8rem;">Votre sous-domaine sera : mon-ecole.sharedmoodle.fr</small>
+              <small style="color:var(--fg-muted);font-size:0.8rem;">Ce nom identifiera votre organisation.</small>
             </div>
             <div class="form-group">
               <label for="email">Email</label>
@@ -157,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <label for="password">Mot de passe</label>
               <input type="password" id="password" class="form-control" placeholder="8 caractères minimum" required minlength="8">
             </div>
-            <button type="submit" class="btn btn-primary btn-block">Créer mon instance</button>
+            <button type="submit" class="btn btn-primary btn-block">Créer mon compte</button>
           </form>
           <p class="divider">Déjà inscrit ? <a href="#login">Se connecter</a></p>
         </div>
@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
           .normalize('NFD').replace(/[̀-ͯ]/g, '')
           .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
         slugPreview.textContent = slug
-          ? `Votre sous-domaine sera : ${slug}.sharedmoodle.fr`
+          ? `Identifiant de l'organisation : ${slug}`
           : '';
       });
     }
@@ -390,7 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const data = await api.register(email, password, nom, organisation);
       alertEl.innerHTML = `<div class="alert alert-success">
-        Inscription réussie ! Votre instance est en cours de création.<br>
+        Inscription réussie ! Votre accès au Moodle de démonstration est prêt.<br>
         URL : <strong>${data.instance?.url || ''}</strong>
       </div>`;
       setTimeout(() => navigate('dashboard'), 2000);
