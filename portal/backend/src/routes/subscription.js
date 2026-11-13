@@ -3,7 +3,6 @@ const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { authMiddleware } = require('../middleware/auth');
 const { PLANS, TEST_CARD } = require('../config/plans');
-const { updateInstanceLimits } = require('../services/provisioning');
 
 const router = express.Router();
 
@@ -165,9 +164,6 @@ router.post(
         `INSERT INTO abonnements (client_id, plan) VALUES ($1, 'GOLD')`,
         [clientId]
       );
-
-      // Mettre à jour les limites de l'instance Moodle
-      await updateInstanceLimits(clientId, 'GOLD');
 
       // Log de succès
       await db.query(
