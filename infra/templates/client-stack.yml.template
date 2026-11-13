@@ -1,0 +1,113 @@
+# ============================================================
+# SharedMoodle — Template de stack client Moodle
+# Généré automatiquement par l'orchestrateur lors de l'inscription
+# Variables : {{SLUG}}, {{CLIENT_ID}}, {{DB_PASSWORD}}, {{PLAN}}
+# ============================================================
+
+networks:
+  sharedmoodle_proxy:
+    external: true
+  client-{{SLUG}}-internal:
+    driver: overlay
+    internal: true
+
+volumes:
+  moodle-{{SLUG}}-data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=${NFS_SERVER},rw,nolock
+      device: ":${NFS_BASE_PATH}/clients/{{SLUG}}/moodledata"
+  mariadb-{{SLUG}}-data:
+    driver: local
+
+services:
+  moodle-{{SLUG}}:
+    image: sharedmoodle/moodle:latest
+    environment:
+      MOODLE_DATABASE_TYPE: mariadb
+      MOODLE_DATABASE_HOST: mariadb-{{SLUG}}
+      MOODLE_DATABASE_PORT_NUMBER: 3306
+      MOODLE_DATABASE_NAME: moodle
+      MOODLE_DATABASE_USER: moodle_{{SLUG}}
+      MOODLE_DATABASE_PASSWORD: {{DB_PASSWORD}}
+      MOODLE_SITE_NAME: "{{SLUG}} — SharedMoodle"
+      MOODLE_USERNAME: admin
+      MOODLE_PASSWORD: {{ADMIN_PASSWORD}}
+      MOODLE_EMAIL: admin@{{SLUG}}.sharedmoodle.fr
+      MOODLE_LANG: fr
+      # Limites injectées selon le forfait
+      SHAREDMOODLE_PLAN: "{{PLAN}}"
+      SHAREDMOODLE_MAX_USERS: "{{MAX_USERS}}"
+      SHAREDMOODLE_MAX_COURSES: "{{MAX_COURSES}}"
+      SHAREDMOODLE_MAX_STORAGE_MB: "{{MAX_STORAGE_MB}}"
+    volumes:
+      - moodle-{{SLUG}}-data:/bitnami/moodledata
+    networks:
+      - sharedmoodle_proxy
+      - client-{{SLUG}}-internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == app
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.moodle-{{SLUG}}.rule=Host(`{{SLUG}}.sharedmoodle.fr`)"
+        - "traefik.http.routers.moodle-{{SLUG}}.entrypoints=websecure"
+        - "traefik.http.routers.moodle-{{SLUG}}.tls.certresolver=letsencrypt"
+        - "traefik.http.services.moodle-{{SLUG}}.loadbalancer.server.port=8080"
+        - "sharedmoodle.client_id={{CLIENT_ID}}"
+        - "sharedmoodle.plan={{PLAN}}"
+      update_config:
+        parallelism: 1
+        delay: 30s
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login/index.php"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  mariadb-{{SLUG}}:
+    image: mariadb:10.11
+    environment:
+      MYSQL_ROOT_PASSWORD: {{DB_ROOT_PASSWORD}}
+      MYSQL_DATABASE: moodle
+      MYSQL_USER: moodle_{{SLUG}}
+      MYSQL_PASSWORD: {{DB_PASSWORD}}
+    volumes:
+      - mariadb-{{SLUG}}-data:/var/lib/mysql
+    networks:
+      - client-{{SLUG}}-internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == db
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+        reservations:
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

@@ -1,0 +1,37 @@
+# Traefik v3 — Configuration statique
+# Complète les flags du docker-compose (utilisable en alternative)
+
+api:
+  dashboard: true
+  insecure: false
+
+log:
+  level: INFO
+
+accessLog:
+  filePath: "/var/log/traefik/access.log"
+  bufferingSize: 100
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+
+providers:
+  swarm:
+    exposedByDefault: false
+    network: sharedmoodle_proxy
+    watch: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: admin@sharedmoodle.fr
+      storage: /certs/acme.json
+      tlsChallenge: {}
