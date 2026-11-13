@@ -4,7 +4,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { authMiddleware, generateToken } = require('../middleware/auth');
 const { loginLimiter, registerLimiter } = require('../middleware/rateLimiter');
-const { findUniqueSlug, deployClientStack } = require('../services/provisioning');
+const { findUniqueSlug } = require('../services/clients');
 
 const router = express.Router();
 
@@ -76,8 +76,14 @@ router.post(
         [client.id]
       );
 
-      // Lancer le provisioning de l'instance Moodle
-      const { url, adminPassword } = await deployClientStack(client.id, slug, 'FREE');
+      const moodleUrl = process.env.MOODLE_URL || 'http://localhost:8081';
+      await db.query(
+        `INSERT INTO instances_moodle (client_id, slug, url, statut)
+         VALUES ($1, $2, $3, 'RUNNING')`,
+        [client.id, slug, moodleUrl]
+      );
+      await db.query(`INSERT INTO consommation (client_id) VALUES ($1)`, [client.id]);
+      await db.query(`UPDATE clients SET statut = 'ACTIVE' WHERE id = $1`, [client.id]);
 
       // Log d'audit
       await db.query(
@@ -98,7 +104,7 @@ router.post(
       });
 
       res.status(201).json({
-        message: 'Inscription réussie ! Votre instance Moodle est en cours de création.',
+        message: 'Inscription réussie ! Le Moodle de démonstration est disponible.',
         client: {
           id: client.id,
           email: client.email,
@@ -108,9 +114,8 @@ router.post(
           plan: client.plan,
         },
         instance: {
-          url,
-          adminPassword,
-          status: 'PROVISIONING',
+          url: moodleUrl,
+          status: 'RUNNING',
         },
       });
     } catch (err) {

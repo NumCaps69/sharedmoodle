@@ -1,184 +1,67 @@
 # SharedMoodle
 
-Plateforme SaaS multi-tenant pour l'hébergement d'instances Moodle isolées.
+Prototype simple d'une plateforme permettant à des clients de gérer un abonnement FREE ou GOLD et d'accéder à un Moodle de démonstration.
 
-## Architecture
+## Ce que contient le projet
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Internet (HTTPS)                      │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-              ┌────────▼────────┐
-              │   Traefik v3    │  Reverse proxy + TLS auto
-              │  (Let's Encrypt)│  *.sharedmoodle.fr
-              └───┬────┬────┬───┘
-                  │    │    │
-    ┌─────────────┘    │    └─────────────┐
-    ▼                  ▼                  ▼
-┌────────┐     ┌─────────────┐    ┌──────────────┐
-│Frontend│     │  API Node.js│    │ Moodle Client│
-│ (Nginx)│     │  (Express)  │    │  (par stack) │
-└────────┘     └──────┬──────┘    └──────┬───────┘
-                      │                  │
-               ┌──────▼──────┐    ┌──────▼───────┐
-               │ PostgreSQL  │    │  MariaDB     │
-               │ (portail)   │    │  (par client)│
-               └─────────────┘    └──────────────┘
-                                         │
-                                  ┌──────▼───────┐
-                                  │   NFS v4     │
-                                  │  (fichiers)  │
-                                  └──────────────┘
-```
+- un portail web d'inscription et de connexion ;
+- une API Node.js et Express ;
+- PostgreSQL pour les comptes et les abonnements ;
+- un Moodle de test avec MariaDB ;
+- une page de consommation ;
+- un paiement simulé pour passer de FREE à GOLD.
 
-## Structure du projet
+## Démarrage
 
-```
-sharedmoodle/
-├── docker-compose.yml          # Stack principale (portail + infra)
-├── db/
-│   └── init.sql                # Schéma PostgreSQL complet
-├── infra/
-│   ├── traefik/
-│   │   └── traefik.yml         # Config Traefik statique
-│   └── templates/
-│       └── client-stack.yml.template  # Template stack Moodle/client
-├── portal/
-│   ├── backend/
-│   │   ├── Dockerfile
-│   │   ├── package.json
-│   │   ├── .env.example
-│   │   └── src/
-│   │       ├── index.js        # Point d'entrée Express
-│   │       ├── config/
-│   │       │   ├── database.js # Pool PostgreSQL
-│   │       │   └── plans.js    # Définition des forfaits
-│   │       ├── middleware/
-│   │       │   ├── auth.js     # JWT auth + génération tokens
-│   │       │   └── rateLimiter.js
-│   │       ├── routes/
-│   │       │   ├── auth.js     # POST /register, /login, /logout
-│   │       │   └── subscription.js  # GET/POST abonnement, conso, upgrade
-│   │       └── services/
-│   │           └── provisioning.js  # Déploiement stacks Docker
-│   └── frontend/
-│       ├── Dockerfile
-│       ├── nginx.conf
-│       ├── index.html
-│       ├── css/style.css
-│       └── js/
-│           ├── api.js          # Client API (fetch)
-│           └── app.js          # SPA (router hash, pages)
-└── README.md
-```
-
-## Démarrage rapide (dev)
-
-### Option recommandée : environnement complet Docker
+Prérequis : Docker Desktop.
 
 ```bash
-docker compose -f docker-compose.dev.yml up --build
+docker compose up --build
 ```
 
-- Portail : `http://localhost:8080`
-- API : `http://localhost:3000/api/health`
-- PostgreSQL : `localhost:5432`
-- Le provisioning Moodle est simulé localement avec `PROVISIONING_MODE=simulate`.
+Puis ouvrir :
 
-Pour arrêter l'environnement :
+- portail SharedMoodle : `http://localhost:8080` ;
+- Moodle de démonstration : `http://localhost:8081` ;
+- API : `http://localhost:3000/api/health`.
+
+Compte administrateur du Moodle de démonstration :
+
+```text
+Utilisateur : admin
+Mot de passe : admin12345
+```
+
+Pour arrêter le projet :
 
 ```bash
-docker compose -f docker-compose.dev.yml down
+docker compose down
 ```
 
-### Prérequis
-- Docker + Docker Compose
-- Node.js 20+
-- PostgreSQL 16
+## Fonctionnement simple
 
-### 1. Base de données
-
-```bash
-# Lancer PostgreSQL en local
-docker run -d --name sm-postgres \
-  -e POSTGRES_DB=sharedmoodle \
-  -e POSTGRES_USER=smadmin \
-  -e POSTGRES_PASSWORD=devpassword \
-  -p 5432:5432 \
-  postgres:16-alpine
-
-# Initialiser le schéma
-docker exec -i sm-postgres psql -U smadmin -d sharedmoodle < db/init.sql
-```
-
-### 2. API Backend
-
-```bash
-cd portal/backend
-cp .env.example .env
-# Éditer .env avec vos paramètres
-npm install
-npm run dev
-# API dispo sur http://localhost:3000
-```
-
-### 3. Frontend
-
-```bash
-cd portal/frontend
-# Ouvrir index.html directement ou avec un serveur
-npx serve .
-# Portail dispo sur http://localhost:3000 (ou 5500 avec Live Server)
-```
-
-### 4. Déploiement Docker Swarm (production)
-
-```bash
-# Initialiser le Swarm
-docker swarm init
-
-# Labelliser les nœuds
-docker node update --label-add role=app <node-id>
-docker node update --label-add role=db <node-id>
-
-# Créer les secrets
-echo "mot-de-passe-fort" | docker secret create postgres_password -
-echo "jwt-secret-32-chars-minimum" | docker secret create jwt_secret -
-
-# Déployer
-docker stack deploy -c docker-compose.yml sharedmoodle
-```
-
-## API Endpoints
-
-| Méthode | Route | Auth | Description |
-|---------|-------|------|-------------|
-| POST | `/api/auth/register` | Non | Inscription + provisioning Moodle |
-| POST | `/api/auth/login` | Non | Connexion (retourne JWT) |
-| POST | `/api/auth/logout` | Non | Déconnexion |
-| GET | `/api/subscription` | Oui | Mon abonnement actuel |
-| GET | `/api/subscription/consumption` | Oui | Ma consommation |
-| GET | `/api/subscription/instance` | Oui | Mon instance Moodle |
-| POST | `/api/subscription/upgrade` | Oui | Passer en GOLD (carte test: 4242...) |
-| GET | `/api/health` | Non | Health check |
+1. Le client s'inscrit sur le portail.
+2. Il reçoit automatiquement le forfait FREE.
+3. Il peut ouvrir le Moodle de démonstration.
+4. Il consulte son abonnement et sa consommation.
+5. Il peut tester le passage à GOLD avec la carte `4242 4242 4242 4242`.
 
 ## Forfaits
 
-| | FREE | GOLD |
-|---|---|---|
-| Prix | 0€ | 29,99€/mois |
+| Fonction | FREE | GOLD |
+|---|---:|---:|
 | Utilisateurs | 50 | 500 |
-| Cours | 5 | Illimité |
+| Cours | 5 | Illimités |
 | Stockage | 1 Go | 20 Go |
-| Plugins custom | Non | Oui |
-| Backup | Hebdo | Quotidien |
-| Support | 48h | 4h |
+| Plugins personnalisés | Non | Oui |
 
-## Équipe
+## Structure
 
-- Anir
-- Axel G.
-- Axel Guyot
-- Ferdinand Guicheteau
-- Kaisse Belalem
+```text
+db/                 Schéma PostgreSQL
+portal/backend/     API, authentification et abonnements
+portal/frontend/    Interface web
+docker-compose.yml  Lancement local du projet
+```
+
+Docker Swarm, Traefik, NFS et la création automatique d'un Moodle par client ne font pas partie de cette première version. Ils pourront être ajoutés plus tard si le cahier des charges final les exige.
