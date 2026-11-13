@@ -97,6 +97,7 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       JWT_SECRET_FILE: /run/secrets/jwt_secret
       DOMAIN: sharedmoodle.fr
+      PROVISIONING_MODE: swarm
       NFS_SERVER: ${NFS_SERVER}
       NFS_BASE_PATH: ${NFS_BASE_PATH:-/srv/nfs/sharedmoodle}
     secrets:

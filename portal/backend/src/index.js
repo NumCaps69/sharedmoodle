@@ -18,10 +18,13 @@ const PORT = process.env.PORT || 3000;
 // Middlewares globaux
 // ============================================================
 app.use(helmet());
+const developmentOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5500,http://localhost:8080')
+  .split(',')
+  .map((origin) => origin.trim());
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
     ? [`https://${process.env.DOMAIN}`, `https://www.${process.env.DOMAIN}`]
-    : 'http://localhost:5500',
+    : developmentOrigins,
   credentials: true,
 }));
 app.use(express.json({ limit: '10kb' }));

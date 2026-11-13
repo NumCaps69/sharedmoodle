@@ -75,6 +75,23 @@ sharedmoodle/
 
 ## Démarrage rapide (dev)
 
+### Option recommandée : environnement complet Docker
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+- Portail : `http://localhost:8080`
+- API : `http://localhost:3000/api/health`
+- PostgreSQL : `localhost:5432`
+- Le provisioning Moodle est simulé localement avec `PROVISIONING_MODE=simulate`.
+
+Pour arrêter l'environnement :
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
 ### Prérequis
 - Docker + Docker Compose
 - Node.js 20+
