@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -9,15 +11,21 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      # Attention : en Swarm, le montage local ./db/init.sql ne fonctionnera que si ce fichier est présent sur le worker2.
+      # Il est préférable d'utiliser les Docker Configs pour l'initialisation.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U smadmin -d sharedmoodle"]
       interval: 5s
       timeout: 3s
       retries: 10
+    deploy:
+      placement:
+        constraints:
+          - node.labels.role == db
 
   api:
-    build: ./portal/backend
+    # Swarm nécessite une image pré-construite. Pense à la pousser sur ton compte Docker Hub (ex: kasupremacy/sharedmoodle-api).
+    image: kasupremacy/sharedmoodle-api:latest 
     environment:
       NODE_ENV: development
       PORT: 3000
@@ -28,16 +36,19 @@ services:
       FRONTEND_ORIGINS: http://localhost:8080
     ports:
       - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    deploy:
+      placement:
+        constraints:
+          - node.labels.role == manager
 
   frontend:
-    build: ./portal/frontend
+    image: kasupremacy/sharedmoodle-frontend:latest
     ports:
       - "8080:80"
-    depends_on:
-      - api
+    deploy:
+      placement:
+        constraints:
+          - node.labels.role == manager
 
   mariadb:
     image: mariadb:10.11
@@ -48,6 +59,10 @@ services:
       MARIADB_PASSWORD: moodlepassword
     volumes:
       - mariadb-data:/var/lib/mysql
+    deploy:
+      placement:
+        constraints:
+          - node.labels.role == db
 
   moodle:
     image: bitnami/moodle:latest
@@ -67,8 +82,10 @@ services:
     volumes:
       - moodle-data:/bitnami/moodle
       - moodle-files:/bitnami/moodledata
-    depends_on:
-      - mariadb
+    deploy:
+      placement:
+        constraints:
+          - node.labels.role == app
 
 volumes:
   postgres-data:
