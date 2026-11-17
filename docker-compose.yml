@@ -1,41 +1,42 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: sharedmoodle
-      POSTGRES_USER: smadmin
-      POSTGRES_PASSWORD: devpassword
+  traefik:
+    image: traefik:v2.10
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.swarmMode=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=proxy"
+      - "--entrypoints.web.address=:80"
     ports:
-      - "5432:5432"
+      - target: 80
+        published: 80
+        mode: host
+      - target: 8080
+        published: 8080
+        mode: host
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      # Attention : en Swarm, le montage local ./db/init.sql ne fonctionnera que si ce fichier est présent sur le worker2.
-      # Il est préférable d'utiliser les Docker Configs pour l'initialisation.
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U smadmin -d sharedmoodle"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
     deploy:
       placement:
         constraints:
-          - node.labels.role == db
+          - node.labels.role == manager
 
-  api:
-    # Swarm nécessite une image pré-construite. Pense à la pousser sur ton compte Docker Hub (ex: kasupremacy/sharedmoodle-api).
-    image: kasupremacy/sharedmoodle-api:latest 
-    environment:
-      NODE_ENV: development
-      PORT: 3000
-      DATABASE_URL: postgresql://smadmin:devpassword@postgres:5432/sharedmoodle
-      JWT_SECRET: sharedmoodle-local-secret-change-before-production
-      DOMAIN: localhost
-      MOODLE_URL: http://localhost:8081
-      FRONTEND_ORIGINS: http://localhost:8080
+  portainer:
+    image: portainer/portainer-ce:latest
     ports:
-      - "3000:3000"
+      - target: 9000
+        published: 9000
+        mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+    networks:
+      - proxy
     deploy:
       placement:
         constraints:
@@ -43,12 +44,82 @@ services:
 
   frontend:
     image: kasupremacy/sharedmoodle-frontend:latest
-    ports:
-      - "8080:80"
+    networks:
+      - sharedmoodle_net
+      - proxy
     deploy:
       placement:
         constraints:
           - node.labels.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.frontend.rule=Host(`portail.sharedmoodle`)"
+        - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+  api:
+    image: kasupremacy/sharedmoodle-api:latest
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://smadmin:devpassword@postgres:5432/sharedmoodle
+      JWT_SECRET: sharedmoodle-local-secret-change-before-production
+      DOMAIN: localhost
+      MOODLE_URL: http://pau.sharedmoodle
+      FRONTEND_ORIGINS: http://portail.sharedmoodle
+    networks:
+      - sharedmoodle_net
+      - proxy
+    deploy:
+      placement:
+        constraints:
+          - node.labels.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.api.rule=Host(`api.sharedmoodle`)"
+        - "traefik.http.services.api.loadbalancer.server.port=3000"
+
+  moodle:
+    image: bitnamilegacy/moodle:latest
+    environment:
+      MOODLE_DATABASE_TYPE: mariadb
+      MOODLE_DATABASE_HOST: tasks.mariadb
+      MOODLE_DATABASE_PORT_NUMBER: 3306
+      MOODLE_DATABASE_NAME: moodle
+      MOODLE_DATABASE_USER: moodle
+      MOODLE_DATABASE_PASSWORD: moodlepassword
+      MOODLE_USERNAME: admin
+      MOODLE_PASSWORD: admin12345
+      MOODLE_EMAIL: admin@sharedmoodle.local
+      MOODLE_SITE_NAME: SharedMoodle Pau
+    volumes:
+      - moodle-data:/bitnami/moodle
+      - moodle-files:/bitnami/moodledata
+    networks:
+      - sharedmoodle_net
+      - proxy
+    deploy:
+      placement:
+        constraints:
+          - node.labels.role == app
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.moodle.rule=Host(`pau.sharedmoodle`)"
+        - "traefik.http.services.moodle.loadbalancer.server.port=8080"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sharedmoodle
+      POSTGRES_USER: smadmin
+      POSTGRES_PASSWORD: devpassword
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    deploy:
+      placement:
+        constraints:
+          - node.labels.role == db
+    networks:
+      - sharedmoodle_net
 
   mariadb:
     image: mariadb:10.11
@@ -63,32 +134,18 @@ services:
       placement:
         constraints:
           - node.labels.role == db
-
-  moodle:
-    image: bitnami/moodle:latest
-    environment:
-      MOODLE_DATABASE_TYPE: mariadb
-      MOODLE_DATABASE_HOST: mariadb
-      MOODLE_DATABASE_PORT_NUMBER: 3306
-      MOODLE_DATABASE_NAME: moodle
-      MOODLE_DATABASE_USER: moodle
-      MOODLE_DATABASE_PASSWORD: moodlepassword
-      MOODLE_USERNAME: admin
-      MOODLE_PASSWORD: admin12345
-      MOODLE_EMAIL: admin@sharedmoodle.local
-      MOODLE_SITE_NAME: SharedMoodle Demo
-    ports:
-      - "8081:8080"
-    volumes:
-      - moodle-data:/bitnami/moodle
-      - moodle-files:/bitnami/moodledata
-    deploy:
-      placement:
-        constraints:
-          - node.labels.role == app
+    networks:
+      - sharedmoodle_net
 
 volumes:
   postgres-data:
   mariadb-data:
   moodle-data:
   moodle-files:
+  portainer-data:
+
+networks:
+  sharedmoodle_net:
+    driver: overlay
+  proxy:
+    external: true
