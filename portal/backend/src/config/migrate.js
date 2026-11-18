@@ -34,19 +34,31 @@ async function waitForDatabase(retries = 20, delayMs = 3000) {
   throw new Error('PostgreSQL injoignable');
 }
 
+// Plusieurs copies de l'API peuvent démarrer en même temps :
+// un verrou PostgreSQL garantit qu'une seule applique le schéma.
+const MIGRATION_LOCK = 4242;
+
 async function migrate() {
   await waitForDatabase();
 
-  const { rows } = await db.query("SELECT to_regclass('public.clients') AS existe");
-  if (!rows[0].existe) {
-    console.log('Schéma absent : création des tables');
-    await db.query(fs.readFileSync(SCHEMA_FILE, 'utf8'));
-  }
+  const conn = await db.pool.connect();
+  try {
+    await conn.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK]);
 
-  for (const sql of UPGRADES) {
-    await db.query(sql);
+    const { rows } = await conn.query("SELECT to_regclass('public.clients') AS existe");
+    if (!rows[0].existe) {
+      console.log('Schéma absent : création des tables');
+      await conn.query(fs.readFileSync(SCHEMA_FILE, 'utf8'));
+    }
+
+    for (const sql of UPGRADES) {
+      await conn.query(sql);
+    }
+    console.log('Schéma PostgreSQL à jour');
+  } finally {
+    await conn.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK]).catch(() => {});
+    conn.release();
   }
-  console.log('Schéma PostgreSQL à jour');
 }
 
 module.exports = { migrate };
