@@ -4,6 +4,7 @@ const db = require('../config/database');
 const { authMiddleware } = require('../middleware/auth');
 const { PLANS, isUpgrade, TEST_CARD } = require('../config/plans');
 const { refreshConsumption, computeAlerts, pourcentage } = require('../services/usage');
+const { provisionerEnabled, changeTenantPlan, tenantStatus } = require('../services/tenants');
 
 const router = express.Router();
 
@@ -44,7 +45,7 @@ router.get('/', async (req, res) => {
 // ============================================================
 router.get('/consumption', async (req, res) => {
   try {
-    const mesureAJour = await refreshConsumption(req.user.id);
+    const { mesure: mesureAJour } = await refreshConsumption(req.user.id);
 
     const result = await db.query(
       `SELECT co.nb_utilisateurs, co.nb_cours, co.stockage_utilise_mo, co.derniere_maj,
@@ -80,6 +81,11 @@ router.get('/consumption', async (req, res) => {
       },
     };
 
+    const bloques = await db.query(
+      'SELECT type, COUNT(*)::int AS n FROM blocages WHERE client_id = $1 GROUP BY type',
+      [req.user.id]
+    );
+
     res.json({
       consommation: {
         ...consommation,
@@ -87,6 +93,8 @@ router.get('/consumption', async (req, res) => {
         source: mesureAJour ? 'moodle' : 'derniere-mesure',
       },
       ...computeAlerts(data.plan, consommation),
+      // Éléments bloqués dans Moodle par le portail (forfait dépassé)
+      blocages: Object.fromEntries(bloques.rows.map((r) => [r.type, r.n])),
     });
   } catch (err) {
     console.error('Erreur récupération consommation:', err);
@@ -191,8 +199,22 @@ router.post(
         conn.release();
       }
 
+      // Moodle dédié : plus de CPU/mémoire (scalabilité verticale par forfait)
+      // puis rétablir ce qui était bloqué par l'ancienne limite
+      let ressources = null;
+      const inst = await db.query('SELECT slug, docker_stack_name FROM instances_moodle WHERE client_id = $1', [clientId]);
+      if (provisionerEnabled() && inst.rows[0]?.docker_stack_name) {
+        try {
+          ressources = (await changeTenantPlan(inst.rows[0].slug, cible)).ressources;
+        } catch (err) {
+          console.error('Mise à jour des ressources du Moodle impossible :', err.message);
+        }
+      }
+      await refreshConsumption(clientId);
+
       const limites = PLANS[cible];
       res.json({
+        ressources,
         message: `Passage en ${cible} réussi !`,
         plan: cible,
         limites: {
@@ -216,7 +238,7 @@ router.post(
 router.get('/instance', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT slug, url, statut, version_moodle, created_at
+      `SELECT slug, url, statut, docker_stack_name, version_moodle, created_at
        FROM instances_moodle WHERE client_id = $1`,
       [req.user.id]
     );
@@ -225,9 +247,93 @@ router.get('/instance', async (req, res) => {
       return res.status(404).json({ error: 'Aucune instance trouvée' });
     }
 
-    res.json({ instance: result.rows[0] });
+    const instance = result.rows[0];
+    // Moodle dédié en cours de création : demander l'état au provisioner
+    if (instance.docker_stack_name && provisionerEnabled() && instance.statut !== 'RUNNING') {
+      try {
+        const etat = await tenantStatus(instance.slug);
+        if (etat.exists && etat.statut !== instance.statut) {
+          instance.statut = etat.statut;
+          await db.query('UPDATE instances_moodle SET statut = $1 WHERE client_id = $2', [etat.statut, req.user.id]);
+        }
+        instance.services = etat.services;
+      } catch (err) {
+        console.error('État du Moodle indisponible :', err.message);
+      }
+    }
+
+    delete instance.docker_stack_name;
+    res.json({ instance });
   } catch (err) {
     console.error('Erreur récupération instance:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ============================================================
+// GET /api/subscription/report[?format=csv] — Rapport d'usage
+// Forfait, limites, consommation actuelle, historique 30 jours,
+// éléments bloqués et paiements. Généré à la demande.
+// ============================================================
+router.get('/report', async (req, res) => {
+  try {
+    await refreshConsumption(req.user.id);
+    const [client, histo, bloques, paiements] = await Promise.all([
+      db.query(
+        `SELECT c.organisation, c.slug, c.plan, i.url, i.statut,
+                l.max_utilisateurs, l.max_cours, l.stockage_go,
+                co.nb_utilisateurs, co.nb_cours, co.stockage_utilise_mo, co.derniere_maj
+         FROM clients c
+         JOIN limites l ON l.plan = c.plan
+         LEFT JOIN instances_moodle i ON i.client_id = c.id
+         LEFT JOIN consommation co ON co.client_id = c.id
+         WHERE c.id = $1`,
+        [req.user.id]
+      ),
+      db.query(
+        `SELECT date, nb_utilisateurs, nb_cours, stockage_utilise_mo
+         FROM consommation_historique
+         WHERE client_id = $1 AND date > NOW() - INTERVAL '30 days'
+         ORDER BY date`,
+        [req.user.id]
+      ),
+      db.query('SELECT type, COUNT(*)::int AS n FROM blocages WHERE client_id = $1 GROUP BY type', [req.user.id]),
+      db.query('SELECT date, montant, statut, motif FROM paiements WHERE client_id = $1 ORDER BY date', [req.user.id]),
+    ]);
+
+    const c = client.rows[0];
+    const rapport = {
+      genereLe: new Date().toISOString(),
+      organisation: c.organisation,
+      moodle: c.url,
+      forfait: c.plan,
+      limites: { utilisateurs: c.max_utilisateurs, cours: c.max_cours === -1 ? 'illimité' : c.max_cours, stockageGo: c.stockage_go },
+      consommation: {
+        utilisateurs: c.nb_utilisateurs,
+        cours: c.nb_cours,
+        stockageMo: parseFloat(c.stockage_utilise_mo),
+        mesureLe: c.derniere_maj,
+      },
+      blocages: Object.fromEntries(bloques.rows.map((r) => [r.type, r.n])),
+      historique: histo.rows,
+      paiements: paiements.rows,
+    };
+
+    if (req.query.format === 'csv') {
+      const lignes = [
+        `# Rapport d'usage SharedMoodle - ${c.organisation} - forfait ${c.plan} - ${rapport.genereLe}`,
+        `# Limites : ${c.max_utilisateurs} utilisateurs, ${rapport.limites.cours} cours, ${c.stockage_go} Go`,
+        'date,utilisateurs,cours,stockage_mo',
+        ...histo.rows.map((h) => `${new Date(h.date).toISOString()},${h.nb_utilisateurs},${h.nb_cours},${h.stockage_utilise_mo}`),
+      ];
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="rapport-usage-${c.slug}.csv"`);
+      return res.send(`${lignes.join('\n')}\n`);
+    }
+
+    res.json({ rapport });
+  } catch (err) {
+    console.error('Erreur rapport:', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

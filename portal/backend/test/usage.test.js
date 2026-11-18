@@ -23,3 +23,11 @@ test('computeAlerts ne propose rien sans alerte ni au-dessus de PLATINUM', () =>
   assert.equal(computeAlerts('FREE', { utilisateurs: { pourcentage: 10 } }).miseANiveau, null);
   assert.equal(computeAlerts('PLATINUM', { utilisateurs: { pourcentage: 100 } }).miseANiveau, null);
 });
+
+const { ecart } = require('../src/services/usage');
+
+test('ecart : nombre à bloquer ou place pour rétablir', () => {
+  assert.equal(ecart(53, 50), 3); // 3 utilisateurs de trop
+  assert.equal(ecart(40, 50), -10); // 10 places libres
+  assert.equal(ecart(900, -1), -Infinity); // illimité : tout rétablir
+});

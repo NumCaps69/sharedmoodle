@@ -67,7 +67,7 @@ noeud() {
 reset() {
   titre "Retour aux valeurs du docker-compose.yml"
   mgr service update --limit-cpu 0.5 --limit-memory 256M --reserve-cpu 0.1 --reserve-memory 128M "${STACK}_api"
-  for s in api frontend moodle; do mgr service scale -d "${STACK}_$s=2"; done
+  for s in api frontend; do mgr service scale -d "${STACK}_$s=2"; done
   echo "Nœuds : docker update --cpus 0 --memory 0 ne retire pas une limite mémoire ; recréer le nœud si besoin."
 }
 

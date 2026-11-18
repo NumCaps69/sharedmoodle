@@ -23,7 +23,8 @@ set -uo pipefail
 MANAGER="${MANAGER:-manager1}"
 NODES="${NODES:-manager1 worker1 worker2}"
 # service:min:max
-SERVICES="${SERVICES:-sharedmoodle_api:2:6 sharedmoodle_frontend:2:6 sharedmoodle_moodle:2:3}"
+# Ajouter le Moodle d'un établissement, ex. "sm-pau_moodle:1:2"
+SERVICES="${SERVICES:-sharedmoodle_api:2:6 sharedmoodle_frontend:2:6}"
 UP="${UP:-70}"
 DOWN="${DOWN:-25}"
 INTERVAL="${INTERVAL:-15}"

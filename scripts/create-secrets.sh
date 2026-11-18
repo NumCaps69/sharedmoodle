@@ -6,18 +6,21 @@
 #   MANAGER=manager1 ./scripts/create-secrets.sh
 #
 # Les valeurs générées sont gardées dans ~/sharedmoodle-secrets.txt (lisible
-# par toi seul) pour pouvoir se connecter à Moodle en admin. Ne pas le commiter.
+# par toi seul) pour pouvoir se connecter à Moodle en cas de besoin. Ne pas le commiter.
 #
 # Attention : MariaDB et PostgreSQL ne lisent le mot de passe qu'à la création
 # de leur volume. Si les volumes existent déjà avec les anciens mots de passe,
-# il faut les supprimer (données perdues) ou donner les anciennes valeurs :
-#   SM_POSTGRES_PASSWORD=... SM_MOODLE_DB_PASSWORD=... ./scripts/create-secrets.sh
+# il faut les supprimer (données perdues) ou donner l'ancienne valeur :
+#   SM_POSTGRES_PASSWORD=... ./scripts/create-secrets.sh
+# Ne jamais changer sm_tenant_master_key une fois des établissements créés :
+# le mot de passe de leur base en dépend.
 
 set -euo pipefail
 
 MANAGER="${MANAGER:-manager1}"
 OUT="${HOME}/sharedmoodle-secrets.txt"
-SECRETS=(sm_postgres_password sm_jwt_secret sm_moodle_db_password sm_mariadb_root_password sm_moodle_admin_password)
+# Les secrets de chaque établissement (sm-<slug>_*) sont créés par le provisioner.
+SECRETS=(sm_postgres_password sm_jwt_secret sm_provisioner_token sm_tenant_master_key)
 
 umask 077
 touch "$OUT"

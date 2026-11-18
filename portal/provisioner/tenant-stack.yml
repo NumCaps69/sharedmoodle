@@ -1,0 +1,140 @@
+# ============================================================
+# Pile d'un établissement (un client = une pile "sm-<slug>")
+# Déployée par le provisioner :
+#   TENANT=pau ... docker stack deploy -c tenants/tenant-stack.yml sm-pau
+#
+# Isolation :
+#   - son propre Moodle et sa propre base MariaDB
+#   - ses propres volumes (sm-<slug>_moodle-data, _moodle-files, _db-data)
+#   - son propre réseau "tenant" : le Moodle d'un établissement ne voit
+#     pas la base d'un autre
+#   - ses propres secrets (mot de passe de la base et de l'admin Moodle)
+# Le réseau "sm_admin" relie seulement les bases au portail (mesure de
+# la consommation et application des limites) ; aucun Moodle n'y est.
+# Les ressources dépendent du forfait (variables MOODLE_CPU, MOODLE_MEM...).
+# ============================================================
+version: '3.8'
+
+services:
+  moodle:
+    image: ${MOODLE_IMAGE:-bitnamilegacy/moodle:latest}
+    environment:
+      MOODLE_DATABASE_TYPE: mariadb
+      MOODLE_DATABASE_HOST: db
+      MOODLE_DATABASE_PORT_NUMBER: 3306
+      MOODLE_DATABASE_NAME: moodle
+      MOODLE_DATABASE_USER: moodle
+      MOODLE_DATABASE_PASSWORD_FILE: /run/secrets/db_password
+      MOODLE_USERNAME: admin
+      MOODLE_PASSWORD_FILE: /run/secrets/admin_password
+      MOODLE_EMAIL: ${TENANT_EMAIL}
+      MOODLE_SITE_NAME: ${TENANT_NAME}
+    secrets:
+      - source: db_password
+        target: db_password
+      - source: admin_password
+        target: admin_password
+    volumes:
+      - moodle-data:/bitnami/moodle
+      - moodle-files:/bitnami/moodledata
+    networks:
+      - tenant
+      - proxy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents(\"http://127.0.0.1:8080/login/index.php\", false, stream_context_create([\"http\" => [\"follow_location\" => 0, \"timeout\" => 5]])) === false ? 1 : 0);"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 900s
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "${MOODLE_CPU:-1.0}"
+          memory: ${MOODLE_MEM:-1G}
+        reservations:
+          cpus: "0.1"
+          memory: 256M
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+      restart_policy:
+        condition: any
+        delay: 5s
+      placement:
+        constraints:
+          - ${APP_CONSTRAINT:-node.labels.role == app}
+      labels:
+        - "sharedmoodle.tenant=${TENANT}"
+        - "sharedmoodle.plan=${PLAN}"
+        - "traefik.enable=true"
+        - "traefik.docker.network=proxy"
+        - "traefik.http.routers.${TENANT}.rule=Host(`${TENANT}.${TENANT_DOMAIN:-sharedmoodle}`)"
+        - "traefik.http.services.${TENANT}.loadbalancer.server.port=8080"
+        - "traefik.http.services.${TENANT}.loadbalancer.healthcheck.path=/login/index.php"
+        - "traefik.http.services.${TENANT}.loadbalancer.healthcheck.interval=10s"
+        - "traefik.http.services.${TENANT}.loadbalancer.sticky.cookie=true"
+
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_RANDOM_ROOT_PASSWORD: "yes"
+      MARIADB_DATABASE: moodle
+      MARIADB_USER: moodle
+      MARIADB_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - source: db_password
+        target: db_password
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - tenant
+      - admin
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "127.0.0.1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "${DB_CPU:-0.5}"
+          memory: ${DB_MEM:-512M}
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+      update_config:
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+      placement:
+        constraints:
+          - ${DB_CONSTRAINT:-node.labels.role == db}
+      labels:
+        - "sharedmoodle.tenant=${TENANT}"
+
+volumes:
+  moodle-data:
+  moodle-files:
+  db-data:
+
+networks:
+  tenant:
+    driver: overlay
+  proxy:
+    external: true
+  admin:
+    external: true
+    name: sm_admin
+
+secrets:
+  db_password:
+    external: true
+    name: sm-${TENANT}_db_password
+  admin_password:
+    external: true
+    name: sm-${TENANT}_admin_password

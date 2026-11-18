@@ -143,16 +143,17 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/sm_postgres_password
       JWT_SECRET_FILE: /run/secrets/sm_jwt_secret
       DOMAIN: localhost
-      MOODLE_URL: http://pau.sharedmoodle
       FRONTEND_ORIGINS: http://portail.sharedmoodle
-      MOODLE_DB_HOST: tasks.mariadb
-      MOODLE_DB_NAME: moodle
-      MOODLE_DB_USER: moodle
-      MOODLE_DB_PASSWORD_FILE: /run/secrets/sm_moodle_db_password
+      # Un Moodle par client, créé par le provisioner (pile sm-<slug>)
+      PROVISIONER_URL: http://provisioner:4000
+      PROVISIONER_TOKEN_FILE: /run/secrets/sm_provisioner_token
+      TENANT_MASTER_KEY_FILE: /run/secrets/sm_tenant_master_key
+      TENANT_DOMAIN: sharedmoodle
     secrets:
       - sm_postgres_password
       - sm_jwt_secret
-      - sm_moodle_db_password
+      - sm_provisioner_token
+      - sm_tenant_master_key
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
       interval: 30s
@@ -162,6 +163,7 @@ services:
     networks:
       - sharedmoodle_net
       - proxy
+      - admin
     deploy:
       replicas: 2
       resources:
@@ -193,66 +195,46 @@ services:
         - "traefik.http.services.api.loadbalancer.healthcheck.path=/api/health"
         - "traefik.http.services.api.loadbalancer.healthcheck.interval=10s"
 
-  moodle:
-    image: bitnamilegacy/moodle:latest
+  # Seul service qui pilote Docker : crée la pile Moodle de chaque client.
+  # Pas exposé par Traefik ; appelé par l'API avec un jeton secret.
+  provisioner:
+    image: kasupremacy/sharedmoodle-provisioner:1.1.0
     environment:
-      MOODLE_DATABASE_TYPE: mariadb
-      MOODLE_DATABASE_HOST: tasks.mariadb
-      MOODLE_DATABASE_PORT_NUMBER: 3306
-      MOODLE_DATABASE_NAME: moodle
-      MOODLE_DATABASE_USER: moodle
-      MOODLE_DATABASE_PASSWORD_FILE: /run/secrets/sm_moodle_db_password
-      MOODLE_USERNAME: admin
-      MOODLE_PASSWORD_FILE: /run/secrets/sm_moodle_admin_password
-      MOODLE_EMAIL: admin@sharedmoodle.local
-      MOODLE_SITE_NAME: SharedMoodle Pau
+      PROVISIONER_TOKEN_FILE: /run/secrets/sm_provisioner_token
+      TENANT_MASTER_KEY_FILE: /run/secrets/sm_tenant_master_key
+      TENANT_DOMAIN: sharedmoodle
     secrets:
-      - sm_moodle_db_password
-      - sm_moodle_admin_password
+      - sm_provisioner_token
+      - sm_tenant_master_key
     volumes:
-      - moodle-data:/bitnami/moodle
-      - moodle-files:/bitnami/moodledata
-    healthcheck:
-      test: ["CMD", "php", "-r", "exit(@file_get_contents(\"http://127.0.0.1:8080/login/index.php\", false, stream_context_create([\"http\" => [\"follow_location\" => 0, \"timeout\" => 5]])) === false ? 1 : 0);"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 600s
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - sharedmoodle_net
       - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:4000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     deploy:
-      replicas: 2
+      replicas: 1
       resources:
         limits:
-          cpus: "1.00"
-          memory: 1G
-        reservations:
           cpus: "0.25"
-          memory: 512M
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
       update_config:
         parallelism: 1
-        delay: 10s
         order: start-first
         failure_action: rollback
-        monitor: 30s
-      rollback_config:
-        parallelism: 1
-        order: start-first
       restart_policy:
         condition: any
         delay: 5s
       placement:
         constraints:
-          - node.labels.role == app
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.moodle.rule=Host(`pau.sharedmoodle`)"
-        - "traefik.http.services.moodle.loadbalancer.server.port=8080"
-        - "traefik.http.services.moodle.loadbalancer.healthcheck.path=/login/index.php"
-        - "traefik.http.services.moodle.loadbalancer.healthcheck.interval=10s"
-        # Un utilisateur reste sur la même copie de Moodle pendant sa session
-        - "traefik.http.services.moodle.loadbalancer.sticky.cookie=true"
+          - node.role == manager
 
   postgres:
     image: postgres:16-alpine
@@ -298,57 +280,8 @@ services:
     networks:
       - sharedmoodle_net
 
-  mariadb:
-    image: mariadb:10.11
-    environment:
-      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/sm_mariadb_root_password
-      MARIADB_DATABASE: moodle
-      MARIADB_USER: moodle
-      MARIADB_PASSWORD_FILE: /run/secrets/sm_moodle_db_password
-    secrets:
-      - sm_mariadb_root_password
-      - sm_moodle_db_password
-    volumes:
-      - mariadb-data:/var/lib/mysql
-    deploy:
-      # 1 seule copie : service avec état (une base = un seul écrivain)
-      replicas: 1
-      resources:
-        limits:
-          cpus: "1.00"
-          memory: 1G
-        reservations:
-          cpus: "0.25"
-          memory: 256M
-      # Base de données : arrêter l'ancienne avant de lancer la nouvelle (un seul écrivain sur le volume)
-      update_config:
-        parallelism: 1
-        order: stop-first
-        failure_action: rollback
-        monitor: 30s
-      rollback_config:
-        parallelism: 1
-        order: stop-first
-      restart_policy:
-        condition: any
-        delay: 5s
-      placement:
-        constraints:
-          - node.labels.role == db
-    healthcheck:
-      test: ["CMD", "mariadb-admin", "ping", "-h", "127.0.0.1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 60s
-    networks:
-      - sharedmoodle_net
-
 volumes:
   postgres-data:
-  mariadb-data:
-  moodle-data:
-  moodle-files:
   portainer-data:
 
 # Secrets créés une fois sur le manager avec scripts/create-secrets.sh
@@ -357,11 +290,9 @@ secrets:
     external: true
   sm_jwt_secret:
     external: true
-  sm_moodle_db_password:
+  sm_provisioner_token:
     external: true
-  sm_mariadb_root_password:
-    external: true
-  sm_moodle_admin_password:
+  sm_tenant_master_key:
     external: true
 
 networks:
@@ -369,3 +300,8 @@ networks:
     driver: overlay
   proxy:
     external: true
+  # Relie l'API aux bases des établissements (mesure, limites) ; créé ici, utilisé par les piles sm-<slug>
+  admin:
+    driver: overlay
+    attachable: true
+    name: sm_admin

@@ -240,6 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const instance = instanceData?.instance;
       const alertes = consoData?.alertes || [];
       const miseANiveau = consoData?.miseANiveau;
+      const blocages = consoData?.blocages || {};
 
       document.getElementById('dashboard-content').innerHTML = `
         ${instance ? `
@@ -252,8 +253,24 @@ document.addEventListener('DOMContentLoaded', () => {
               </span>
             </div>
             <a href="${instance.url}" target="_blank" class="instance-url">${instance.url}</a>
+            ${instance.statut === 'PROVISIONING' ? `
+              <p style="color:var(--fg-muted);font-size:0.85rem;margin-top:0.75rem;">
+                Votre Moodle est en cours de création (quelques minutes). Cette page se met à jour toute seule.
+              </p>` : ''}
+            ${instance.statut === 'RUNNING' ? `
+              <p style="color:var(--fg-muted);font-size:0.85rem;margin-top:0.75rem;">
+                Connexion administrateur : <strong>admin</strong> / le mot de passe de votre compte portail.
+              </p>` : ''}
+            ${instance.statut === 'ERROR' ? '<div class="alert alert-error" style="margin-top:0.75rem;">La création de votre Moodle a échoué. Contactez le support.</div>' : ''}
           </div>
         ` : ''}
+
+        ${(blocages.utilisateur || blocages.cours) ? `
+          <div class="alert alert-error">
+            Forfait dépassé : ${blocages.utilisateur ? `${blocages.utilisateur} utilisateur(s) suspendu(s)` : ''}
+            ${blocages.utilisateur && blocages.cours ? ' et ' : ''}${blocages.cours ? `${blocages.cours} cours masqué(s)` : ''}
+            dans votre Moodle. Ils seront rétablis en passant au forfait supérieur.
+          </div>` : ''}
 
         ${alertes.map((a) => `
           <div class="alert ${a.niveau === 'limite' ? 'alert-error' : 'alert-warning'}">${a.message}</div>
@@ -300,6 +317,10 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="progress-label"><span>Stockage</span><span>${(conso.stockage.utiliseMo / 1024).toFixed(1)} Go / ${conso.stockage.maxGo} Go</span></div>
               <div class="progress-bar"><div class="progress-fill ${conso.stockage.pourcentage > 90 ? 'danger' : conso.stockage.pourcentage > 70 ? 'warning' : ''}" style="width:${conso.stockage.pourcentage}%"></div></div>
             </div>
+            <p style="margin-top:1rem;">
+              <a href="/api/subscription/report?format=csv" class="btn btn-outline">Télécharger le rapport d'usage (CSV)</a>
+              <a href="/api/subscription/report" target="_blank" class="btn btn-outline">Voir le rapport complet</a>
+            </p>
           </div>
         ` : ''}
 
@@ -311,6 +332,10 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         ` : ''}
       `;
+      // Moodle en création : recharger le tableau de bord dans 15 s
+      if (instance?.statut === 'PROVISIONING' && getCurrentPage() === 'dashboard') {
+        setTimeout(() => { if (getCurrentPage() === 'dashboard') renderDashboard(); }, 15000);
+      }
     } catch (err) {
       document.getElementById('dashboard-content').innerHTML = `
         <div class="alert alert-error">Erreur de chargement : ${err.error || 'Serveur injoignable'}</div>`;
@@ -424,10 +449,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const data = await api.register(email, password, nom, organisation);
       alertEl.innerHTML = `<div class="alert alert-success">
-        Inscription réussie ! Votre accès au Moodle de démonstration est prêt.<br>
+        ${data.message}<br>
         URL : <strong>${data.instance?.url || ''}</strong>
       </div>`;
-      setTimeout(() => navigate('dashboard'), 2000);
+      setTimeout(() => navigate('dashboard'), 4000);
     } catch (err) {
       alertEl.innerHTML = `<div class="alert alert-error">${err.error || err.errors?.[0]?.msg || 'Erreur'}</div>`;
     }

@@ -11,3 +11,9 @@ test('generateSlug crée un sous-domaine simple', () => {
 test('generateSlug utilise une valeur par défaut', () => {
   assert.equal(generateSlug('🎓'), 'organisation');
 });
+
+test('generateSlug coupe à 40 caractères sans tiret final', () => {
+  const slug = generateSlug('Lycée polyvalent régional de la Côte Basque Bayonne Anglet Biarritz');
+  assert.ok(slug.length <= 40);
+  assert.doesNotMatch(slug, /-$/);
+});

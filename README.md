@@ -7,7 +7,7 @@ Prototype simple d'une plateforme permettant à des clients de gérer un abonnem
 - un portail web d'inscription et de connexion ;
 - une API Node.js et Express ;
 - PostgreSQL pour les comptes et les abonnements ;
-- un Moodle de test avec MariaDB ;
+- un Moodle dédié par client (sa base, son volume, son réseau), créé à l'inscription ;
 - une page de consommation ;
 - un paiement simulé pour passer de FREE à GOLD.
 
@@ -31,9 +31,9 @@ Arrêter : `docker compose -f docker-compose.dev.yml down` (ajouter `-v` pour ef
    ```bash
    ./scripts/create-secrets.sh
    ```
-2. Déployer ou mettre à jour la pile :
+2. Déployer ou mettre à jour la pile (`--prune` retire les anciens services `moodle` et `mariadb` de la pile, remplacés par un Moodle par établissement) :
    ```bash
-   docker exec -i manager1 docker stack deploy -c - sharedmoodle < ~/sharedmoodle/docker-compose.yml
+   docker exec -i manager1 docker stack deploy --prune -c - sharedmoodle < ~/sharedmoodle/docker-compose.yml
    ```
 3. Après un changement de code : construire l'image en amd64 et mettre à jour le service, par exemple :
    ```bash
@@ -42,6 +42,20 @@ Arrêter : `docker compose -f docker-compose.dev.yml down` (ajouter `-v` pour ef
    ```
 
 Aucun mot de passe n'est écrit dans `docker-compose.yml` : les services lisent les Docker secrets montés dans `/run/secrets/`. L'API crée les tables PostgreSQL au démarrage si elles n'existent pas.
+
+## Un Moodle par établissement (multi-tenant)
+
+À l'inscription, l'API demande au **provisioner** de créer la pile `sm-<slug>` du client (`portal/provisioner/tenant-stack.yml`) :
+
+- son Moodle et sa base MariaDB, ses volumes, son réseau, ses secrets ;
+- adresse `http://<slug>.sharedmoodle` (Traefik) ; admin Moodle = `admin` / mot de passe du portail ;
+- ressources selon le forfait (FREE 0,5 CPU / 768 Mo, GOLD 1 CPU / 1 Go, PLATINUM 2 CPU / 2 Go), mises à jour au changement de forfait.
+
+Le provisioner est le seul service qui accède au socket Docker ; il n'est pas exposé et n'accepte que l'API (jeton secret). L'API joint les bases des établissements par le réseau `sm_admin` pour mesurer la consommation et appliquer les limites : au-delà du forfait, les utilisateurs les plus récents sont suspendus et les cours les plus récents masqués ; ils sont rétablis au passage à un forfait supérieur. Rapport d'usage : `GET /api/subscription/report` (`?format=csv`).
+
+Tests d'isolation entre deux établissements : `./scripts/test-isolation.sh pau bayonne` (exemple : `docs/preuves/isolation-pau-bayonne.txt`).
+
+Pour tester sur un poste, ajouter les noms dans `/etc/hosts` (adresse de la VM) : `portail.sharedmoodle api.sharedmoodle pau.sharedmoodle bayonne.sharedmoodle`.
 
 ## Élasticité (sur la VM)
 
@@ -82,9 +96,10 @@ La consommation est mesurée dans la base Moodle ; une alerte apparaît à 80 % 
 portal/backend/         API, authentification, abonnements, mesure de consommation
 portal/backend/sql/     Schéma PostgreSQL (appliqué par l'API)
 portal/frontend/        Interface web (nginx, transmet /api à l'API)
-scripts/                create-secrets.sh
+portal/provisioner/     Création des piles Moodle des établissements
+scripts/                secrets, publication, élasticité, tests d'isolation
 docker-compose.yml      Pile Docker Swarm
 docker-compose.dev.yml  Lancement local
 ```
 
-À venir : supervision (Prometheus/Grafana), un Moodle par client, stockage NFS.
+À venir : supervision (Prometheus/Grafana), stockage NFS.

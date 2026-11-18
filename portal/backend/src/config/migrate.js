@@ -16,6 +16,24 @@ const UPGRADES = [
   `INSERT INTO limites (plan, max_utilisateurs, max_cours, stockage_go, plugins_custom, frequence_backup, support_delai)
    VALUES ('PLATINUM', 5000, -1, 100, TRUE, 'toutes les 6h', '1h')
    ON CONFLICT (plan) DO NOTHING`,
+  // Historique de consommation (rapport d'usage)
+  `CREATE TABLE IF NOT EXISTS consommation_historique (
+     id                  BIGSERIAL PRIMARY KEY,
+     client_id           UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+     nb_utilisateurs     INTEGER NOT NULL,
+     nb_cours            INTEGER NOT NULL,
+     stockage_utilise_mo DECIMAL(10,2) NOT NULL,
+     date                TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   )`,
+  'CREATE INDEX IF NOT EXISTS idx_conso_hist_client_date ON consommation_historique(client_id, date)',
+  // Ce que le portail a bloqué dans Moodle pour respecter le forfait (rétabli si la limite remonte)
+  `CREATE TABLE IF NOT EXISTS blocages (
+     client_id  UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+     type       VARCHAR(20) NOT NULL,
+     moodle_id  BIGINT NOT NULL,
+     date       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     PRIMARY KEY (client_id, type, moodle_id)
+   )`,
 ];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
