@@ -38,6 +38,7 @@ services:
     build: ./portal/frontend
     volumes:
       - ./portal/frontend:/usr/share/nginx/html:ro
+      - ./portal/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "8080:80"
     depends_on:

@@ -7,6 +7,7 @@ const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const { generalLimiter } = require('./middleware/rateLimiter');
 const { migrate } = require('./config/migrate');
+const { PLANS, PLAN_ORDER } = require('./config/plans');
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -38,6 +39,11 @@ app.use(generalLimiter);
 // ============================================================
 app.use('/api/auth', authRoutes);
 app.use('/api/subscription', subscriptionRoutes);
+
+// Liste publique des forfaits (affichée sur l'accueil et la page abonnement)
+app.get('/api/plans', (req, res) => {
+  res.json({ plans: PLAN_ORDER.map((nom) => ({ nom, ...PLANS[nom] })) });
+});
 
 // Health check
 app.get('/api/health', (req, res) => {

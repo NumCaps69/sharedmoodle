@@ -11,7 +11,64 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getCurrentPage() {
-    return window.location.hash.slice(1) || 'home';
+    return window.location.hash.slice(1).split('/')[0] || 'home';
+  }
+
+  function getPageParam() {
+    return window.location.hash.slice(1).split('/')[1] || '';
+  }
+
+  // ---- Forfaits (lus depuis l'API : /api/plans) ----
+  const PLAN_STYLE = {
+    FREE: { classe: '', couleur: '', bouton: 'btn-outline' },
+    GOLD: { classe: 'gold', couleur: 'var(--gold)', bouton: 'btn-gold' },
+    PLATINUM: { classe: 'platinum', couleur: 'var(--platinum)', bouton: 'btn-platinum' },
+  };
+  let plansCache = null;
+
+  async function loadPlans() {
+    if (!plansCache) plansCache = (await api.getPlans()).plans;
+    return plansCache;
+  }
+
+  function prixTexte(prix) {
+    return `${String(prix.toFixed(2)).replace('.', ',').replace(',00', '')}€`;
+  }
+
+  function featuresHtml(p) {
+    return `
+      <li>${p.maxUtilisateurs} utilisateurs max</li>
+      <li>${p.maxCours === -1 ? 'Cours illimités' : `${p.maxCours} cours actifs`}</li>
+      <li>${p.stockageGo} Go de stockage</li>
+      <li>Backup ${p.frequenceBackup}</li>
+      <li>Support ${p.supportDelai}</li>
+      <li class="${p.pluginsCustom ? '' : 'disabled'}">Plugins personnalisés</li>`;
+  }
+
+  // mode : 'home' (bouton inscription) ou 'subscription' (forfait actuel / passer à)
+  function planCardsHtml(plans, mode, currentPlan) {
+    const ordre = plans.map((p) => p.nom);
+    return plans.map((p) => {
+      const st = PLAN_STYLE[p.nom] || PLAN_STYLE.FREE;
+      const color = st.couleur ? ` style="color:${st.couleur};"` : '';
+      let action;
+      if (mode === 'home') {
+        action = `<a href="#register" class="btn ${st.bouton} btn-block">${p.nom === 'FREE' ? "S'inscrire" : 'Commencer en FREE puis upgrader'}</a>`;
+      } else if (p.nom === currentPlan) {
+        action = `<div class="badge badge-${p.nom.toLowerCase()}" style="margin-top:0.5rem;">Forfait actuel</div>`;
+      } else if (ordre.indexOf(p.nom) > ordre.indexOf(currentPlan)) {
+        action = `<a href="#upgrade/${p.nom}" class="btn ${st.bouton} btn-block" style="margin-top:0.5rem;">Passer en ${p.nom}</a>`;
+      } else {
+        action = '';
+      }
+      return `
+        <div class="plan-card ${st.classe} ${p.nom === currentPlan ? 'current' : ''}">
+          <div class="plan-name"${color}>${p.nom}</div>
+          <div class="plan-price"${color}>${prixTexte(p.prix)} <small>/mois</small></div>
+          <ul class="plan-features">${featuresHtml(p)}</ul>
+          ${action}
+        </div>`;
+    }).join('');
   }
 
   // ---- Rendu des pages ----
@@ -72,35 +129,12 @@ document.addEventListener('DOMContentLoaded', () => {
           </a>
         </div>
 
-        <div class="plans-grid" style="margin-top:2rem;">
-          <div class="plan-card">
-            <div class="plan-name">FREE</div>
-            <div class="plan-price">0€ <small>/mois</small></div>
-            <ul class="plan-features">
-              <li>50 utilisateurs max</li>
-              <li>5 cours actifs</li>
-              <li>1 Go de stockage</li>
-              <li>Backup hebdomadaire</li>
-              <li>Support email (48h)</li>
-              <li class="disabled">Plugins personnalisés</li>
-            </ul>
-            <a href="#register" class="btn btn-outline btn-block">S'inscrire</a>
-          </div>
-          <div class="plan-card gold">
-            <div class="plan-name" style="color:var(--gold);">GOLD</div>
-            <div class="plan-price" style="color:var(--gold);">29,99€ <small>/mois</small></div>
-            <ul class="plan-features">
-              <li>500 utilisateurs max</li>
-              <li>Cours illimités</li>
-              <li>20 Go de stockage</li>
-              <li>Backup quotidien</li>
-              <li>Support prioritaire (4h)</li>
-              <li>Plugins personnalisés</li>
-            </ul>
-            <a href="#register" class="btn btn-gold btn-block">Commencer en FREE puis upgrader</a>
-          </div>
-        </div>
+        <div class="plans-grid" id="home-plans" style="margin-top:2rem;"></div>
       </div>`;
+
+    loadPlans()
+      .then((plans) => { document.getElementById('home-plans').innerHTML = planCardsHtml(plans, 'home'); })
+      .catch(() => { document.getElementById('home-plans').innerHTML = '<p>Forfaits indisponibles.</p>'; });
   }
 
   // ---- Page de connexion ----
@@ -275,53 +309,35 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="page-header">
           <h1>Mon abonnement</h1>
         </div>
-        <div class="plans-grid">
-          <div class="plan-card ${client?.plan === 'FREE' ? 'current' : ''}">
-            <div class="plan-name">FREE</div>
-            <div class="plan-price">0€ <small>/mois</small></div>
-            <ul class="plan-features">
-              <li>50 utilisateurs</li>
-              <li>5 cours actifs</li>
-              <li>1 Go de stockage</li>
-              <li>Backup hebdomadaire</li>
-              <li>Support 48h</li>
-              <li class="disabled">Plugins personnalisés</li>
-            </ul>
-            ${client?.plan === 'FREE' ? '<div class="badge badge-free" style="margin-top:0.5rem;">Forfait actuel</div>' : ''}
-          </div>
-          <div class="plan-card gold ${client?.plan === 'GOLD' ? 'current' : ''}">
-            <div class="plan-name" style="color:var(--gold);">GOLD</div>
-            <div class="plan-price" style="color:var(--gold);">29,99€ <small>/mois</small></div>
-            <ul class="plan-features">
-              <li>500 utilisateurs</li>
-              <li>Cours illimités</li>
-              <li>20 Go de stockage</li>
-              <li>Backup quotidien</li>
-              <li>Support prioritaire 4h</li>
-              <li>Plugins personnalisés</li>
-            </ul>
-            ${client?.plan === 'GOLD'
-              ? '<div class="badge badge-gold" style="margin-top:0.5rem;">Forfait actuel</div>'
-              : '<a href="#upgrade" class="btn btn-gold btn-block" style="margin-top:0.5rem;">Passer en GOLD</a>'}
-          </div>
-        </div>
+        <div class="plans-grid" id="sub-plans"><p style="color:var(--fg-muted);">Chargement...</p></div>
       </div>`;
+
+    try {
+      const plans = await loadPlans();
+      document.getElementById('sub-plans').innerHTML = planCardsHtml(plans, 'subscription', client?.plan || 'FREE');
+    } catch {
+      document.getElementById('sub-plans').innerHTML = '<div class="alert alert-error">Forfaits indisponibles</div>';
+    }
   }
 
   // ---- Page upgrade ----
-  function renderUpgrade() {
+  async function renderUpgrade() {
     const client = api.getClient();
-    if (client?.plan === 'GOLD') {
-      navigate('dashboard');
+    const plans = await loadPlans().catch(() => []);
+    const ordre = plans.map((p) => p.nom);
+    const cible = plans.find((p) => p.nom === (getPageParam() || 'GOLD'));
+    if (!cible || ordre.indexOf(cible.nom) <= ordre.indexOf(client?.plan || 'FREE')) {
+      navigate('subscription');
       return;
     }
+    const st = PLAN_STYLE[cible.nom];
 
     app.innerHTML = `
       ${renderNavbar('upgrade')}
       <div class="auth-container">
         <div class="auth-card" style="max-width:460px;">
-          <h1>Passer en GOLD</h1>
-          <p class="subtitle">29,99€/mois — Débloquez toutes les fonctionnalités</p>
+          <h1>Passer en ${cible.nom}</h1>
+          <p class="subtitle">${prixTexte(cible.prix)}/mois — ${cible.maxUtilisateurs} utilisateurs, ${cible.stockageGo} Go, support ${cible.supportDelai}</p>
           <div id="upgrade-alert"></div>
           <div class="alert alert-info">
             MVP : utilisez la carte de test <strong>4242 4242 4242 4242</strong>
@@ -342,8 +358,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <input type="text" id="cvc" class="form-control" placeholder="123" required maxlength="4">
               </div>
             </div>
-            <button type="submit" class="btn btn-gold btn-block" style="margin-top:0.5rem;">
-              Confirmer l'upgrade
+            <input type="hidden" id="target-plan" value="${cible.nom}">
+            <button type="submit" class="btn ${st.bouton} btn-block" style="margin-top:0.5rem;">
+              Confirmer le passage en ${cible.nom}
             </button>
           </form>
           <p class="divider"><a href="#subscription">Retour</a></p>
@@ -405,13 +422,14 @@ document.addEventListener('DOMContentLoaded', () => {
     alertEl.innerHTML = '';
 
     const numeroCarte = document.getElementById('card').value;
+    const plan = document.getElementById('target-plan').value;
 
     try {
-      const data = await api.upgrade(numeroCarte);
-      // Mettre à jour le client local
+      const data = await api.upgrade(numeroCarte, plan);
+      // Mettre à jour le client local avec le forfait confirmé par le serveur
       const client = api.getClient();
       if (client) {
-        client.plan = 'GOLD';
+        client.plan = data.plan;
         localStorage.setItem('sm_client', JSON.stringify(client));
       }
       alertEl.innerHTML = `<div class="alert alert-success">${data.message}</div>`;

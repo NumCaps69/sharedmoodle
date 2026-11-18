@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { authMiddleware } = require('../middleware/auth');
-const { PLANS, TEST_CARD } = require('../config/plans');
+const { PLANS, isUpgrade, TEST_CARD } = require('../config/plans');
 
 const router = express.Router();
 
@@ -84,7 +84,8 @@ router.get('/consumption', async (req, res) => {
 });
 
 // ============================================================
-// POST /api/subscription/upgrade — Passer en GOLD
+// POST /api/subscription/upgrade — Passer à un forfait supérieur
+// Corps : { numeroCarte, plan } ; plan = GOLD (défaut) ou PLATINUM
 // ============================================================
 router.post(
   '/upgrade',
@@ -93,6 +94,10 @@ router.post(
       .trim()
       .notEmpty()
       .withMessage('Numéro de carte requis'),
+    body('plan')
+      .optional()
+      .isIn(['GOLD', 'PLATINUM'])
+      .withMessage('Forfait inconnu'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -101,10 +106,11 @@ router.post(
     }
 
     const { numeroCarte } = req.body;
+    const cible = req.body.plan || 'GOLD';
     const clientId = req.user.id;
 
     try {
-      // Vérifier que le client est en FREE
+      // Le forfait actuel est lu en base : le client ne peut pas le falsifier
       const clientResult = await db.query(
         'SELECT plan FROM clients WHERE id = $1',
         [clientId]
@@ -114,8 +120,9 @@ router.post(
         return res.status(404).json({ error: 'Client non trouvé' });
       }
 
-      if (clientResult.rows[0].plan === 'GOLD') {
-        return res.status(400).json({ error: 'Vous êtes déjà en forfait GOLD' });
+      const actuel = clientResult.rows[0].plan;
+      if (!isUpgrade(actuel, cible)) {
+        return res.status(400).json({ error: `Vous êtes déjà en ${actuel} : choisissez un forfait supérieur` });
       }
 
       // Nettoyer le numéro de carte (retirer les espaces)
@@ -126,58 +133,57 @@ router.post(
 
       // Masquer le numéro pour le stockage
       const carteMasquee = `${carteNettoyee.slice(0, 4)} **** **** ${carteNettoyee.slice(-4)}`;
+      const motif = `Upgrade ${actuel} -> ${cible}`;
 
       // Enregistrer le paiement
       await db.query(
         `INSERT INTO paiements (client_id, montant, numero_carte, statut, motif)
-         VALUES ($1, $2, $3, $4, 'Upgrade FREE -> GOLD')`,
-        [clientId, PLANS.GOLD.prix, carteMasquee, carteAcceptee ? 'ACCEPTED' : 'REFUSED']
+         VALUES ($1, $2, $3, $4, $5)`,
+        [clientId, PLANS[cible].prix, carteMasquee, carteAcceptee ? 'ACCEPTED' : 'REFUSED', motif]
       );
 
       if (!carteAcceptee) {
-        // Log de paiement refusé
         await db.query(
           `INSERT INTO logs_audit (client_id, action, details)
-           VALUES ($1, 'PAYMENT_REFUSED', '{"motif": "Carte invalide"}')`,
-          [clientId]
+           VALUES ($1, 'PAYMENT_REFUSED', $2)`,
+          [clientId, JSON.stringify({ motif: 'Carte invalide', from: actuel, to: cible })]
         );
 
-        return res.status(400).json({
-          error: 'Paiement refusé. La carte n\'est pas acceptée.',
+        return res.status(402).json({
+          error: `Paiement refusé. Vous restez en ${actuel}.`,
+          plan: actuel,
           hint: 'Pour le MVP, utilisez la carte de test : 4242 4242 4242 4242',
         });
       }
 
-      // Mettre à jour le forfait du client
-      await db.query(
-        'UPDATE clients SET plan = $1 WHERE id = $2',
-        ['GOLD', clientId]
-      );
+      // Changement de forfait et d'abonnement en une seule transaction
+      const conn = await db.pool.connect();
+      try {
+        await conn.query('BEGIN');
+        await conn.query('UPDATE clients SET plan = $1 WHERE id = $2', [cible, clientId]);
+        await conn.query(
+          `UPDATE abonnements SET actif = FALSE, date_fin = NOW()
+           WHERE client_id = $1 AND actif = TRUE`,
+          [clientId]
+        );
+        await conn.query('INSERT INTO abonnements (client_id, plan) VALUES ($1, $2)', [clientId, cible]);
+        await conn.query(
+          `INSERT INTO logs_audit (client_id, action, details)
+           VALUES ($1, 'UPGRADE_SUCCESS', $2)`,
+          [clientId, JSON.stringify({ from: actuel, to: cible })]
+        );
+        await conn.query('COMMIT');
+      } catch (err) {
+        await conn.query('ROLLBACK');
+        throw err;
+      } finally {
+        conn.release();
+      }
 
-      // Désactiver l'ancien abonnement et créer le nouveau
-      await db.query(
-        `UPDATE abonnements SET actif = FALSE, date_fin = NOW()
-         WHERE client_id = $1 AND actif = TRUE`,
-        [clientId]
-      );
-      await db.query(
-        `INSERT INTO abonnements (client_id, plan) VALUES ($1, 'GOLD')`,
-        [clientId]
-      );
-
-      // Log de succès
-      await db.query(
-        `INSERT INTO logs_audit (client_id, action, details)
-         VALUES ($1, 'UPGRADE_SUCCESS', '{"from": "FREE", "to": "GOLD"}')`,
-        [clientId]
-      );
-
-      // Récupérer les nouvelles limites
-      const limites = PLANS.GOLD;
-
+      const limites = PLANS[cible];
       res.json({
-        message: 'Upgrade en GOLD réussi !',
-        plan: 'GOLD',
+        message: `Passage en ${cible} réussi !`,
+        plan: cible,
         limites: {
           maxUtilisateurs: limites.maxUtilisateurs,
           maxCours: limites.maxCours === -1 ? 'Illimité' : limites.maxCours,

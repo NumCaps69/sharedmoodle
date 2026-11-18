@@ -2,9 +2,8 @@
 // SharedMoodle — Client API
 // ============================================================
 
-const API_BASE = window.location.hostname === 'localhost'
-  ? 'http://localhost:3000/api'
-  : `https://api.${window.location.hostname.replace(/^www\./, '')}/api`;
+// nginx du portail transmet /api/ au service "api" (voir nginx.conf)
+const API_BASE = '/api';
 
 class SharedMoodleAPI {
   constructor() {
@@ -86,11 +85,15 @@ class SharedMoodleAPI {
     return this.request('/subscription/instance');
   }
 
-  async upgrade(numeroCarte) {
+  async upgrade(numeroCarte, plan = 'GOLD') {
     return this.request('/subscription/upgrade', {
       method: 'POST',
-      body: JSON.stringify({ numeroCarte }),
+      body: JSON.stringify({ numeroCarte, plan }),
     });
+  }
+
+  async getPlans() {
+    return this.request('/plans');
   }
 
   // ---- Helpers ----
