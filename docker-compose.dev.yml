@@ -33,6 +33,7 @@ services:
     volumes:
       - ./portal/backend/src:/app/src
       - ./portal/backend/sql:/app/sql:ro
+      - ./portal/backend/package.json:/app/package.json:ro
     ports:
       - "3000:3000"
     healthcheck:

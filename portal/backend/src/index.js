@@ -50,7 +50,8 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'sharedmoodle-api',
-    version: '1.0.0',
+    version: require('../package.json').version,
+    instance: require('os').hostname(), // identifie la copie (réplica) qui répond
     timestamp: new Date().toISOString(),
   });
 });
