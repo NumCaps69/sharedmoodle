@@ -122,52 +122,137 @@ Légende : ✅ fait · 🔶 en cours ou partiel · ⬜ à faire
 | 19/11 | Alertes Discord | <mark style="background-color:#b7f5c4;color:#000">L'équipe est prévenue sur Discord dès qu'un établissement atteint 80 % de son forfait ou qu'un service tombe</mark> |
 | 19/11 | 2e nœud app | <mark style="background-color:#b7f5c4;color:#000">Si un nœud tombe, le Moodle de l'établissement repart sur l'autre en ~17 s avec ses fichiers (NFS) : haute disponibilité</mark> |
 
-## 4. Lancer l'application sur le Mac
+## 4. Lancer le projet sur son ordinateur (pour toute l'équipe)
 
-Prérequis : Docker Desktop lancé.
+Ce guide suffit pour tout voir en local : le portail, l'API, Moodle, Grafana, Prometheus, les alertes et les bases de données. Il marche sur Mac, Windows et Linux. Les valeurs de cette section servent seulement aux tests en local.
 
+### 4.1 Prérequis (une seule fois)
+
+1. Installer **Docker Desktop** (https://www.docker.com/products/docker-desktop) et le lancer. Dans ses réglages (Settings, Resources), donner au moins **4 Go de mémoire**.
+2. Installer **Git** (sur Mac il est déjà là ; sur Windows : https://git-scm.com).
+3. Vérifier que les deux marchent :
 ```bash
-cd "/Users/mouhamed/Desktop/M1-SIGLIS/Cloud C/6 - Projet SharedMoodle/depot-sharedmoodle"
+docker --version && git --version
 ```
 
-Tout, avec Moodle (premier lancement : plusieurs minutes) :
+### 4.2 Récupérer le code
+
+```bash
+git clone https://github.com/NumCaps69/sharedmoodle.git
+```
+```bash
+cd sharedmoodle
+```
+
+Plus tard, pour avoir la dernière version :
+```bash
+git pull origin main
+```
+
+### 4.3 Tout lancer
+
+Application seule (portail, API, Moodle, bases, Adminer) :
 ```bash
 docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-Avec la supervision en plus (Prometheus, Grafana, cAdvisor) :
+Application + supervision (Prometheus, Grafana, Alertmanager) :
 ```bash
 docker compose -f docker-compose.dev.yml --profile monitoring up -d --build
 ```
 
-Ouvrir :
-- Portail : http://localhost:8080
-- API : http://localhost:8080/api/health
-- Moodle : http://localhost:8081
-- Grafana : http://localhost:3001 (`admin` / `devgrafana`)
-- Prometheus : http://localhost:9090 (onglet Alerts : alertes de limite)
-- Alertmanager : http://localhost:9093 ; notifications du faux Discord : `docker compose -f docker-compose.dev.yml logs -f alert-receiver`
-- Cours partagés : http://localhost:8080/#catalogue ; page admin : http://localhost:8080/#admin (compte `test@pau.fr`, admin en local)
-
-Tester dans le portail :
-1. S'inscrire (email, mot de passe de 8 caractères, organisation) : forfait FREE
-2. Voir « Mon abonnement » et la consommation
-3. Passer en GOLD ou PLATINUM avec la carte `4242 4242 4242 4242`
-4. Tester un refus avec une autre carte, ex. `1111 1111 1111 1111`
-5. Voir l'alerte : 4 cours de test dans le Moodle local (4/5 = 80 % pour FREE), aussi visible dans Grafana et Prometheus
-
-Voir ce qui se passe :
+Le premier lancement télécharge les images et installe Moodle : compter **5 à 10 minutes**. Suivre l'installation de Moodle :
+```bash
+docker compose -f docker-compose.dev.yml logs -f moodle
+```
+Moodle est prêt quand tous les services sont `healthy` :
 ```bash
 docker compose -f docker-compose.dev.yml ps
+```
+
+### 4.4 Ce qu'on peut ouvrir
+
+| Quoi | Adresse | Connexion |
+|---|---|---|
+| Portail (inscription, abonnement, cours partagés, admin) | http://localhost:8080 | créer un compte (4.5) |
+| État de l'API | http://localhost:8080/api/health | aucune |
+| Moodle de démonstration | http://localhost:8081 | `admin` / `admin12345` |
+| Grafana (tableaux) | http://localhost:3001 | `admin` / `devgrafana` |
+| Prometheus (mesures, onglet Alerts) | http://localhost:9090 | aucune |
+| Alertmanager (alertes envoyées) | http://localhost:9093 | aucune |
+| Adminer (voir les bases dans le navigateur) | http://localhost:8082 | voir ci-dessous |
+| Catalogue en données ouvertes | http://localhost:8080/api/catalogue/jsonld | aucune |
+
+Adminer :
+- **PostgreSQL du portail** : Système `PostgreSQL`, Serveur `postgres`, Utilisateur `smadmin`, Mot de passe `devpassword`, Base `sharedmoodle`. Tables utiles : `clients`, `instances_moodle`, `consommation`, `paiements`, `cours_partages`, `blocages`, `logs_audit`.
+- **MariaDB de Moodle** : Système `MySQL`, Serveur `mariadb`, Utilisateur `moodle`, Mot de passe `moodlepassword`, Base `moodle`. Tables utiles : `mdl_user`, `mdl_course`.
+
+Grafana : menu **Dashboards**, dossier **SharedMoodle**, tableau **Établissements** (choisir l'établissement en haut). En local, les jauges et la consommation marchent ; les courbes CPU par service sont surtout utiles sur le Swarm.
+
+Alertes en local : elles vont à un faux Discord. Les voir arriver :
+```bash
+docker compose -f docker-compose.dev.yml logs -f alert-receiver
+```
+
+### 4.5 Premier essai, pas à pas
+
+1. **Créer un compte** sur http://localhost:8080 (S'inscrire : nom, organisation, email, mot de passe de 8 caractères). Le compte est en FREE.
+   En local, tous les comptes partagent le Moodle de démonstration (pas de provisioner) ; sur le Swarm, chaque compte a son propre Moodle.
+2. **Créer 4 cours de test** dans Moodle, pour atteindre 80 % de la limite FREE (5 cours) :
+```bash
+for i in 1 2 3 4; do docker compose -f docker-compose.dev.yml exec -T moodle su -s /bin/sh daemon -c "php /opt/bitnami/moodle/admin/tool/generator/cli/maketestcourse.php --shortname=test$i --size=XS --bypasscheck --quiet"; done
+```
+3. Recharger le **tableau de bord** du portail : 4/5 cours, alerte à 80 % et bouton « Passer en GOLD ». La mesure se met à jour à chaque visite du tableau de bord (et toutes les 5 min).
+4. **Passer en GOLD** avec la carte de test `4242 4242 4242 4242` (date et CVC au choix). Une autre carte, ex. `1111 1111 1111 1111`, est refusée et le compte reste en FREE.
+5. **Devenir admin** du portail (remplacer l'email), puis se déconnecter et se reconnecter : le menu **Admin** apparaît.
+```bash
+LOCAL=1 ./scripts/make-admin.sh ton.email@exemple.fr
+```
+6. **Partager un cours** : dans Moodle (http://localhost:8081), ouvrir un cours, menu **Plus**, **Sauvegarde**, aller au bout et télécharger le `.mbz`. Sur le portail, page **Cours partagés**, déposer le fichier. Avec un 2e compte, le télécharger, puis dans Moodle : **Administration du site**, **Cours**, **Restaurer un cours**.
+7. **Voir l'alerte** dans Prometheus (http://localhost:9090/alerts) puis dans le faux Discord (commande du 4.4) après 1 à 2 minutes.
+8. **Voir les données** dans Adminer : table `clients` (forfait), `consommation` (chiffres mesurés), `paiements` (carte acceptée ou refusée), `cours_partages`.
+
+Commandes utiles en ligne de commande :
+```bash
+docker compose -f docker-compose.dev.yml exec postgres psql -U smadmin -d sharedmoodle -c "SELECT email, plan, est_admin FROM clients;"
 ```
 ```bash
 docker compose -f docker-compose.dev.yml logs -f api
 ```
 
-Arrêter :
+### 4.6 Tests automatiques
+
+```bash
+cd portal/backend && npm install && npm test
+```
+```bash
+cd portal/provisioner && npm test
+```
+```bash
+docker run --rm --entrypoint promtool -v "$PWD/monitoring/prometheus":/c -w /c prom/prometheus:v2.53.2 test rules alerts.test.yml
+```
+(les deux premières depuis la racine du dépôt, avec Node.js 20 installé ; la troisième aussi depuis la racine.)
+
+### 4.7 Arrêter, tout effacer, problèmes courants
+
+Arrêter (les données sont gardées) :
 ```bash
 docker compose -f docker-compose.dev.yml --profile monitoring down
 ```
+Tout effacer, données comprises (comptes, Moodle, mesures) :
+```bash
+docker compose -f docker-compose.dev.yml --profile monitoring down -v
+```
+
+| Problème | Solution |
+|---|---|
+| `port is already allocated` (8080, 8081, 8082, 3001, 9090, 9093) | Un autre programme utilise le port : l'arrêter, ou changer le premier nombre du port dans `docker-compose.dev.yml` (ex. `"8090:80"`) |
+| Moodle affiche une erreur ou ne répond pas | Il s'installe encore : attendre que `docker compose -f docker-compose.dev.yml ps` montre `healthy` |
+| Le portail n'a pas changé après un `git pull` | Recharger sans cache : Cmd+Maj+R (Mac) ou Ctrl+F5 (Windows) |
+| Docker manque de mémoire, des conteneurs s'arrêtent | Donner 4 Go ou plus à Docker Desktop, ou lancer sans le profil `monitoring` |
+| La consommation reste à 0 | Ouvrir le tableau de bord du portail pour forcer une mesure, ou attendre 5 min |
+| `make-admin.sh` : `UPDATE 0` | L'email n'existe pas encore : s'inscrire d'abord sur le portail |
+
 
 ---
 
@@ -255,6 +340,7 @@ Branches GitHub : `finitions-partiel`, `healthchecks`, `replicas-limites`, `mise
 | 19/11 | Webhook Discord | `scripts/set-discord-webhook.sh` | <mark style="background-color:#b7f5c4;color:#000">Changer le webhook sans tout redéployer, et envoyer une alerte de test</mark> |
 | 19/11 | Ajout de nœud | `scripts/add-node.sh` | <mark style="background-color:#b7f5c4;color:#000">Une commande crée un nœud DinD, l'ajoute au Swarm avec son rôle et prépare les images</mark> |
 | 19/11 | Sécurité du portail | `js/app.js` | <mark style="background-color:#b7f5c4;color:#000">Les textes saisis par les utilisateurs (noms, titres de cours) sont échappés avant affichage</mark> |
+| 19/11 | Guide de lancement pour l'équipe + Adminer | `État du projet.md` section 4, `docker-compose.dev.yml` | <mark style="background-color:#b7f5c4;color:#000">N'importe qui lance tout et voit portail, Moodle, Grafana, Prometheus, alertes et bases sans poser de question</mark> |
 | 19/11 | Tests | `test/catalogue.test.js` | <mark style="background-color:#b7f5c4;color:#000">21 tests backend passent</mark> |
 
 ### Résultats des tests (Mac, Swarm jetable)
@@ -324,7 +410,8 @@ Page admin : http://portail.sharedmoodle/#admin.
 | Carte acceptée | `4242 4242 4242 4242` (date et CVC : n'importe lesquels, ex. `12/28`, `123`) |
 | Carte refusée | n'importe quelle autre, ex. `1111 1111 1111 1111` |
 | Comptes portail créés en local | `test@pau.fr`, `plat@bayonne.fr` (PLATINUM), `conso@pau.fr` (FREE, alerte cours) ; mot de passe `testtest1` |
-| Admin Moodle local | défini dans `docker-compose.dev.yml` (`MOODLE_USERNAME` / `MOODLE_PASSWORD`) |
+| Admin Moodle local | `admin` / `admin12345` (défini dans `docker-compose.dev.yml`) |
+| Adminer local | http://localhost:8082 (PostgreSQL : `smadmin` / `devpassword` ; MariaDB : `moodle` / `moodlepassword`) |
 | Admin Moodle d'un établissement (Swarm) | `admin` / mot de passe du compte portail du client |
 | Grafana local | `admin` / `devgrafana` |
 | Admin du portail en local | `test@pau.fr` (donné par `LOCAL=1 ./scripts/make-admin.sh test@pau.fr`) |

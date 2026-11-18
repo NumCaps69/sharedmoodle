@@ -71,11 +71,13 @@ Avec la supervision en plus :
 docker compose -f docker-compose.dev.yml --profile monitoring up -d --build
 ```
 
-Grafana : http://localhost:3001 (`admin` / `devgrafana`), Prometheus : http://localhost:9090, Alertmanager : http://localhost:9093. En local, les alertes vont à un faux Discord : `docker compose -f docker-compose.dev.yml logs -f alert-receiver`.
+Grafana : http://localhost:3001 (`admin` / `devgrafana`), Prometheus : http://localhost:9090, Alertmanager : http://localhost:9093, Adminer (bases de données) : http://localhost:8082. En local, les alertes vont à un faux Discord : `docker compose -f docker-compose.dev.yml logs -f alert-receiver`.
 
 Les dossiers `portal/frontend` et `portal/backend/src` sont montés dans les conteneurs : une modification est visible sans reconstruire. En local il n'y a pas de provisioner : tous les comptes partagent le Moodle de démonstration.
 
 Arrêter : `docker compose -f docker-compose.dev.yml down` (ajouter `-v` pour effacer les données).
+
+Guide complet pas à pas (comptes de test, cours de test, admin, bases de données, problèmes courants) : [docs/etat-du-projet.md](docs/etat-du-projet.md), section 4.
 
 ## Déployer sur le Swarm (VM)
 

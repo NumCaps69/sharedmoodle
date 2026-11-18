@@ -105,6 +105,17 @@ services:
     depends_on:
       - mariadb
 
+  # Voir les bases dans le navigateur : http://localhost:8082
+  # PostgreSQL : système PostgreSQL, serveur postgres, smadmin / devpassword, base sharedmoodle
+  # MariaDB    : système MySQL, serveur mariadb, moodle / moodlepassword, base moodle
+  adminer:
+    image: adminer:4.8.1
+    ports:
+      - "8082:8080"
+    depends_on:
+      - postgres
+      - mariadb
+
   # ---------- Supervision (optionnelle) ----------
   # docker compose -f docker-compose.dev.yml --profile monitoring up -d --build
   # Grafana : http://localhost:3001 (admin / devgrafana) ; Prometheus : http://localhost:9090
