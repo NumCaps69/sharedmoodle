@@ -1,6 +1,6 @@
 -- ============================================================
 -- SharedMoodle — Schéma PostgreSQL du portail
--- Exécuté automatiquement au premier lancement de PostgreSQL
+-- Appliqué par l'API au démarrage si les tables n'existent pas (src/config/migrate.js)
 -- ============================================================
 
 -- Extensions
@@ -11,7 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- Types énumérés
 -- ============================================================
 
-CREATE TYPE plan_type AS ENUM ('FREE', 'GOLD');
+CREATE TYPE plan_type AS ENUM ('FREE', 'GOLD', 'PLATINUM');
 CREATE TYPE client_status AS ENUM ('PENDING', 'ACTIVE', 'SUSPENDED');
 CREATE TYPE instance_status AS ENUM ('PROVISIONING', 'RUNNING', 'STOPPED', 'ERROR');
 CREATE TYPE payment_status AS ENUM ('ACCEPTED', 'REFUSED');
@@ -55,7 +55,8 @@ CREATE TABLE limites (
 INSERT INTO limites (plan, max_utilisateurs, max_cours, stockage_go, plugins_custom, frequence_backup, support_delai)
 VALUES
     ('FREE', 50, 5, 1, FALSE, 'hebdomadaire', '48h'),
-    ('GOLD', 500, -1, 20, TRUE, 'quotidien', '4h');
+    ('GOLD', 500, -1, 20, TRUE, 'quotidien', '4h'),
+    ('PLATINUM', 5000, -1, 100, TRUE, 'toutes les 6h', '1h');
 
 -- ============================================================
 -- Table : abonnements

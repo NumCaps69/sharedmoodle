@@ -1,0 +1,81 @@
+# Lancement local sur le Mac (pas pour le Swarm). Usage : docker compose -f docker-compose.dev.yml up --build
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sharedmoodle
+      POSTGRES_USER: smadmin
+      POSTGRES_PASSWORD: devpassword
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smadmin -d sharedmoodle"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./portal/backend
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://smadmin:devpassword@postgres:5432/sharedmoodle
+      JWT_SECRET: sharedmoodle-local-secret-change-before-production
+      DOMAIN: localhost
+      MOODLE_URL: http://localhost:8081
+      FRONTEND_ORIGINS: http://localhost:8080
+    command: ["node", "--watch", "src/index.js"]
+    volumes:
+      - ./portal/backend/src:/app/src
+      - ./portal/backend/sql:/app/sql:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./portal/frontend
+    volumes:
+      - ./portal/frontend:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  mariadb:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpassword
+      MARIADB_DATABASE: moodle
+      MARIADB_USER: moodle
+      MARIADB_PASSWORD: moodlepassword
+    volumes:
+      - mariadb-data:/var/lib/mysql
+
+  moodle:
+    image: bitnamilegacy/moodle:latest
+    environment:
+      MOODLE_DATABASE_TYPE: mariadb
+      MOODLE_DATABASE_HOST: mariadb
+      MOODLE_DATABASE_PORT_NUMBER: 3306
+      MOODLE_DATABASE_NAME: moodle
+      MOODLE_DATABASE_USER: moodle
+      MOODLE_DATABASE_PASSWORD: moodlepassword
+      MOODLE_USERNAME: admin
+      MOODLE_PASSWORD: admin12345
+      MOODLE_EMAIL: admin@sharedmoodle.local
+      MOODLE_SITE_NAME: SharedMoodle Demo
+    ports:
+      - "8081:8080"
+    volumes:
+      - moodle-data:/bitnami/moodle
+      - moodle-files:/bitnami/moodledata
+    depends_on:
+      - mariadb
+
+volumes:
+  postgres-data:
+  mariadb-data:
+  moodle-data:
+  moodle-files:

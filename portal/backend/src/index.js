@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const { generalLimiter } = require('./middleware/rateLimiter');
+const { migrate } = require('./config/migrate');
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -63,9 +64,18 @@ app.use((err, req, res, next) => {
 // ============================================================
 // Démarrage
 // ============================================================
-app.listen(PORT, () => {
-  console.log(`SharedMoodle API démarrée sur le port ${PORT}`);
-  console.log(`Environnement : ${process.env.NODE_ENV || 'development'}`);
-});
+if (require.main === module) {
+  migrate()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`SharedMoodle API démarrée sur le port ${PORT}`);
+        console.log(`Environnement : ${process.env.NODE_ENV || 'development'}`);
+      });
+    })
+    .catch((err) => {
+      console.error('Démarrage impossible :', err.message);
+      process.exit(1);
+    });
+}
 
 module.exports = app;
