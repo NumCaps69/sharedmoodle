@@ -11,32 +11,37 @@ Prototype simple d'une plateforme permettant à des clients de gérer un abonnem
 - une page de consommation ;
 - un paiement simulé pour passer de FREE à GOLD.
 
-## Démarrage
-
-Prérequis : Docker Desktop.
+## Démarrage en local (Mac ou PC, Docker Desktop)
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-Puis ouvrir :
+- portail : `http://localhost:8080` (l'API est servie sous `/api`) ;
+- Moodle : `http://localhost:8081` (compte admin défini dans `docker-compose.dev.yml`, valeurs de test uniquement) ;
+- API : `http://localhost:8080/api/health`.
 
-- portail SharedMoodle : `http://localhost:8080` ;
-- Moodle de démonstration : `http://localhost:8081` ;
-- API : `http://localhost:3000/api/health`.
+Les fichiers de `portal/frontend` et `portal/backend/src` sont montés dans les conteneurs : une modification est visible sans reconstruire l'image.
 
-Compte administrateur du Moodle de démonstration :
+Arrêter : `docker compose -f docker-compose.dev.yml down` (ajouter `-v` pour effacer les données).
 
-```text
-Utilisateur : admin
-Mot de passe : admin12345
-```
+## Déploiement sur le Swarm (VM)
 
-Pour arrêter le projet :
+1. Créer les secrets une seule fois (mots de passe aléatoires, copie dans `~/sharedmoodle-secrets.txt`) :
+   ```bash
+   ./scripts/create-secrets.sh
+   ```
+2. Déployer ou mettre à jour la pile :
+   ```bash
+   docker exec -i manager1 docker stack deploy -c - sharedmoodle < ~/sharedmoodle/docker-compose.yml
+   ```
+3. Après un changement de code : construire l'image en amd64 et mettre à jour le service, par exemple :
+   ```bash
+   docker buildx build --platform linux/amd64 -t kasupremacy/sharedmoodle-api:latest --push portal/backend
+   docker exec -it manager1 docker service update --image kasupremacy/sharedmoodle-api:latest --force sharedmoodle_api
+   ```
 
-```bash
-docker compose down
-```
+Aucun mot de passe n'est écrit dans `docker-compose.yml` : les services lisent les Docker secrets montés dans `/run/secrets/`. L'API crée les tables PostgreSQL au démarrage si elles n'existent pas.
 
 ## Fonctionnement simple
 
@@ -44,24 +49,30 @@ docker compose down
 2. Il reçoit automatiquement le forfait FREE.
 3. Il peut ouvrir le Moodle de démonstration.
 4. Il consulte son abonnement et sa consommation.
-5. Il peut tester le passage à GOLD avec la carte `4242 4242 4242 4242`.
+5. Il peut passer en GOLD ou PLATINUM avec la carte `4242 4242 4242 4242` ; toute autre carte est refusée et il reste sur son forfait.
 
 ## Forfaits
 
-| Fonction | FREE | GOLD |
-|---|---:|---:|
-| Utilisateurs | 50 | 500 |
-| Cours | 5 | Illimités |
-| Stockage | 1 Go | 20 Go |
-| Plugins personnalisés | Non | Oui |
+| Fonction | FREE | GOLD | PLATINUM |
+|---|---:|---:|---:|
+| Prix | 0 € | 29,99 €/mois | 99,99 €/mois |
+| Utilisateurs | 50 | 500 | 5000 |
+| Cours | 5 | Illimités | Illimités |
+| Stockage | 1 Go | 20 Go | 100 Go |
+| Plugins personnalisés | Non | Oui | Oui |
+| Support | 48h | 4h | 1h |
+
+La consommation est mesurée dans la base Moodle ; une alerte apparaît à 80 % d'une limite, avec la proposition du forfait supérieur.
 
 ## Structure
 
 ```text
-db/                 Schéma PostgreSQL
-portal/backend/     API, authentification et abonnements
-portal/frontend/    Interface web
-docker-compose.yml  Lancement local du projet
+portal/backend/         API, authentification, abonnements, mesure de consommation
+portal/backend/sql/     Schéma PostgreSQL (appliqué par l'API)
+portal/frontend/        Interface web (nginx, transmet /api à l'API)
+scripts/                create-secrets.sh
+docker-compose.yml      Pile Docker Swarm
+docker-compose.dev.yml  Lancement local
 ```
 
-Docker Swarm, Traefik, NFS et la création automatique d'un Moodle par client ne font pas partie de cette première version. Ils pourront être ajoutés plus tard si le cahier des charges final les exige.
+À venir : healthchecks, réplicas, autoscaler, supervision (Prometheus/Grafana), un Moodle par client, stockage NFS.

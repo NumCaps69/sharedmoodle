@@ -61,11 +61,22 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
-      DATABASE_URL: postgresql://smadmin:devpassword@postgres:5432/sharedmoodle
-      JWT_SECRET: sharedmoodle-local-secret-change-before-production
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: sharedmoodle
+      POSTGRES_USER: smadmin
+      POSTGRES_PASSWORD_FILE: /run/secrets/sm_postgres_password
+      JWT_SECRET_FILE: /run/secrets/sm_jwt_secret
       DOMAIN: localhost
       MOODLE_URL: http://pau.sharedmoodle
       FRONTEND_ORIGINS: http://portail.sharedmoodle
+      MOODLE_DB_HOST: tasks.mariadb
+      MOODLE_DB_NAME: moodle
+      MOODLE_DB_USER: moodle
+      MOODLE_DB_PASSWORD_FILE: /run/secrets/sm_moodle_db_password
+    secrets:
+      - sm_postgres_password
+      - sm_jwt_secret
+      - sm_moodle_db_password
     networks:
       - sharedmoodle_net
       - proxy
@@ -86,11 +97,14 @@ services:
       MOODLE_DATABASE_PORT_NUMBER: 3306
       MOODLE_DATABASE_NAME: moodle
       MOODLE_DATABASE_USER: moodle
-      MOODLE_DATABASE_PASSWORD: moodlepassword
+      MOODLE_DATABASE_PASSWORD_FILE: /run/secrets/sm_moodle_db_password
       MOODLE_USERNAME: admin
-      MOODLE_PASSWORD: admin12345
+      MOODLE_PASSWORD_FILE: /run/secrets/sm_moodle_admin_password
       MOODLE_EMAIL: admin@sharedmoodle.local
       MOODLE_SITE_NAME: SharedMoodle Pau
+    secrets:
+      - sm_moodle_db_password
+      - sm_moodle_admin_password
     volumes:
       - moodle-data:/bitnami/moodle
       - moodle-files:/bitnami/moodledata
@@ -111,7 +125,9 @@ services:
     environment:
       POSTGRES_DB: sharedmoodle
       POSTGRES_USER: smadmin
-      POSTGRES_PASSWORD: devpassword
+      POSTGRES_PASSWORD_FILE: /run/secrets/sm_postgres_password
+    secrets:
+      - sm_postgres_password
     volumes:
       - postgres-data:/var/lib/postgresql/data
     deploy:
@@ -124,10 +140,13 @@ services:
   mariadb:
     image: mariadb:10.11
     environment:
-      MARIADB_ROOT_PASSWORD: rootpassword
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/sm_mariadb_root_password
       MARIADB_DATABASE: moodle
       MARIADB_USER: moodle
-      MARIADB_PASSWORD: moodlepassword
+      MARIADB_PASSWORD_FILE: /run/secrets/sm_moodle_db_password
+    secrets:
+      - sm_mariadb_root_password
+      - sm_moodle_db_password
     volumes:
       - mariadb-data:/var/lib/mysql
     deploy:
@@ -143,6 +162,19 @@ volumes:
   moodle-data:
   moodle-files:
   portainer-data:
+
+# Secrets créés une fois sur le manager avec scripts/create-secrets.sh
+secrets:
+  sm_postgres_password:
+    external: true
+  sm_jwt_secret:
+    external: true
+  sm_moodle_db_password:
+    external: true
+  sm_mariadb_root_password:
+    external: true
+  sm_moodle_admin_password:
+    external: true
 
 networks:
   sharedmoodle_net:
