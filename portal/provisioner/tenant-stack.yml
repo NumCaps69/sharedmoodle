@@ -68,6 +68,7 @@ services:
       labels:
         - "sharedmoodle.tenant=${TENANT}"
         - "sharedmoodle.plan=${PLAN}"
+        - "sharedmoodle.storage=${STORAGE:-local}"
         - "traefik.enable=true"
         - "traefik.docker.network=proxy"
         - "traefik.http.routers.${TENANT}.rule=Host(`${TENANT}.${TENANT_DOMAIN:-sharedmoodle}`)"

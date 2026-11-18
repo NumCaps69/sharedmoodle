@@ -1,5 +1,5 @@
 -- ============================================================
--- SharedMoodle — Schéma PostgreSQL du portail
+-- SharedMoodle : Schéma PostgreSQL du portail
 -- Appliqué par l'API au démarrage si les tables n'existent pas (src/config/migrate.js)
 -- ============================================================
 

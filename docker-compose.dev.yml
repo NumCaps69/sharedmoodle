@@ -105,6 +105,41 @@ services:
     depends_on:
       - mariadb
 
+  # ---------- Supervision (optionnelle) ----------
+  # docker compose -f docker-compose.dev.yml --profile monitoring up -d --build
+  # Grafana : http://localhost:3001 (admin / devgrafana) ; Prometheus : http://localhost:9090
+  prometheus:
+    profiles: ["monitoring"]
+    build: ./monitoring/prometheus
+    volumes:
+      - ./monitoring/prometheus/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    profiles: ["monitoring"]
+    build: ./monitoring/grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: devgrafana
+    volumes:
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+  cadvisor:
+    profiles: ["monitoring"]
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    command: ["--docker_only=true", "--housekeeping_interval=15s", "--store_container_labels=false",
+              "--whitelisted_container_labels=com.docker.compose.service,com.docker.compose.project"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+
 volumes:
   postgres-data:
   mariadb-data:

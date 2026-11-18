@@ -1,5 +1,5 @@
 // ============================================================
-// SharedMoodle — Provisioner
+// SharedMoodle : Provisioner
 // Seul service qui pilote Docker (socket du manager Swarm).
 // L'API publique ne touche jamais Docker : elle appelle ce service
 // sur le réseau interne, avec un jeton partagé (Docker secret).
@@ -94,8 +94,53 @@ async function readLabels(slug) {
   }
 }
 
-async function deployTenant({ slug, plan, email, name }) {
-  await run(['stack', 'deploy', '--detach=true', '-c', TEMPLATE, `sm-${slug}`], { env: stackEnv(slug, plan, email, name) });
+// Stockage partagé NFS (E2), activé si NFS_ADDR est défini : les fichiers
+// du Moodle sont sur le serveur NFS, le Moodle peut donc redémarrer sur
+// n'importe quel nœud "app" sans perdre ses fichiers. La base reste sur
+// un volume local du nœud "db" (MariaDB est déconseillé sur NFS).
+const NFS_ADDR = process.env.NFS_ADDR || '';
+const NFS_PATH = (process.env.NFS_PATH || '').replace(/\/$/, '');
+const NFS_TEMPLATE = process.env.TENANT_NFS_TEMPLATE || path.join(__dirname, '..', 'tenant-nfs.yml');
+const NFS_ROOT_VOLUME = 'sm-nfs-root';
+
+function nfsOptions() {
+  return `addr=${NFS_ADDR},rw,nfsvers=4,soft,timeo=100,retrans=3`;
+}
+
+// Crée les dossiers de l'établissement sur le serveur NFS (un montage NFS
+// échoue si le dossier n'existe pas)
+async function ensureNfsDirs(slug) {
+  try {
+    await run(['volume', 'inspect', NFS_ROOT_VOLUME]);
+  } catch {
+    await run(['volume', 'create', '--driver', 'local',
+      '--opt', 'type=nfs', '--opt', `o=${nfsOptions()}`, '--opt', `device=:${NFS_PATH || '/'}`, NFS_ROOT_VOLUME]);
+  }
+  await run(['run', '--rm', '-v', `${NFS_ROOT_VOLUME}:/nfs`, process.env.NFS_HELPER_IMAGE || 'alpine:3.20',
+    'mkdir', '-p', `/nfs/${slug}/moodle`, `/nfs/${slug}/moodledata`]);
+}
+
+// Stockage d'un nouvel établissement : NFS si le serveur est configuré
+function defaultStorage() {
+  return NFS_ADDR ? 'nfs' : 'local';
+}
+
+function deployArgs(slug, storage = defaultStorage()) {
+  const files = storage === 'nfs' ? ['-c', TEMPLATE, '-c', NFS_TEMPLATE] : ['-c', TEMPLATE];
+  return ['stack', 'deploy', '--detach=true', ...files, `sm-${slug}`];
+}
+
+// storage : "nfs" ou "local". Un établissement garde le stockage choisi à sa
+// création (étiquette sharedmoodle.storage) : activer NFS plus tard ne
+// déplace pas les fichiers des établissements existants.
+async function deployTenant({ slug, plan, email, name, storage = defaultStorage() }) {
+  if (storage === 'nfs' && !NFS_ADDR) throw new Error(`${slug} utilise NFS mais NFS_ADDR est vide`);
+  const env = { ...stackEnv(slug, plan, email, name), STORAGE: storage };
+  if (storage === 'nfs') {
+    await ensureNfsDirs(slug);
+    Object.assign(env, { NFS_OPTIONS: nfsOptions(), NFS_PATH });
+  }
+  await run(deployArgs(slug, storage), { env });
 }
 
 // Moodle répond-il ? (le provisioner est sur le réseau proxy, comme Traefik)
@@ -192,7 +237,10 @@ async function handle(req, res) {
     if (!labels) return send(res, 404, { error: 'Établissement inconnu' });
     const env = await run(['service', 'inspect', '-f', '{{json .Spec.TaskTemplate.ContainerSpec.Env}}', `sm-${slug}_moodle`]);
     const vars = Object.fromEntries(JSON.parse(env).map((e) => [e.split('=')[0], e.slice(e.indexOf('=') + 1)]));
-    await deployTenant({ slug, plan, email: vars.MOODLE_EMAIL, name: vars.MOODLE_SITE_NAME });
+    await deployTenant({
+      slug, plan, email: vars.MOODLE_EMAIL, name: vars.MOODLE_SITE_NAME,
+      storage: labels['sharedmoodle.storage'] || 'local',
+    });
     console.log(`Établissement ${slug} : forfait ${plan}`);
     return send(res, 200, { slug, plan, ressources: PLAN_RESOURCES[plan] });
   }
@@ -227,4 +275,4 @@ if (require.main === module) {
   }).listen(PORT, () => console.log(`Provisioner sur le port ${PORT}`));
 }
 
-module.exports = { tenantDbPassword, validSlug, PLAN_RESOURCES };
+module.exports = { tenantDbPassword, validSlug, PLAN_RESOURCES, deployArgs };

@@ -1,0 +1,25 @@
+# ============================================================
+# Stockage partagé NFS d'un établissement (E2)
+# Ajouté par le provisioner après tenant-stack.yml quand NFS_ADDR est défini :
+#   docker stack deploy -c tenant-stack.yml -c tenant-nfs.yml sm-<slug>
+#
+# Les volumes du Moodle pointent vers <NFS_PATH>/<slug>/ sur le serveur NFS.
+# Chaque nœud qui lance le Moodle monte le même dossier : si le nœud tombe,
+# le Swarm relance le Moodle sur un autre nœud "app" avec les mêmes fichiers.
+# La base MariaDB garde son volume local (nœud "db").
+# ============================================================
+version: '3.8'
+
+volumes:
+  moodle-data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "${NFS_OPTIONS}"
+      device: ":${NFS_PATH}/${TENANT}/moodle"
+  moodle-files:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "${NFS_OPTIONS}"
+      device: ":${NFS_PATH}/${TENANT}/moodledata"

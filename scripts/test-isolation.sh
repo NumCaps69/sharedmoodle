@@ -55,7 +55,7 @@ php_connect() { # php_connect <service> <hôte> : 0 si le port 3306 répond
   task_exec "$1" php -r "exit(@fsockopen('$2', 3306, \$e, \$s, 3) ? 0 : 1);"
 }
 
-echo "=== Isolation $A / $B — $(date '+%F %T') ===" | tee "$OUT"
+echo "=== Isolation $A / $B : $(date '+%F %T') ===" | tee "$OUT"
 
 # 1. Réseau
 if php_connect "sm-${A}_moodle" db; then resultat PASS "réseau : le Moodle de $A joint sa propre base"; else resultat FAIL "réseau : le Moodle de $A ne joint pas sa base"; fi

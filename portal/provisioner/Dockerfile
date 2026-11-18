@@ -5,7 +5,7 @@ RUN apk add --no-cache nodejs
 WORKDIR /app
 COPY package.json ./
 COPY src/ ./src/
-COPY tenant-stack.yml ./tenant-stack.yml
+COPY tenant-stack.yml tenant-nfs.yml ./
 EXPOSE 4000
 # L'image docker:cli préfixe la commande par "docker" : on remplace son point d'entrée
 ENTRYPOINT ["node", "src/index.js"]

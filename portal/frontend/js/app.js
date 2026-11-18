@@ -1,5 +1,5 @@
 // ============================================================
-// SharedMoodle — App Frontend (SPA simple)
+// SharedMoodle : App Frontend (SPA simple)
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -222,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="container">
         <div class="page-header">
           <h1>Bonjour, ${client?.nom || 'Client'}</h1>
-          <p>${client?.organisation || ''} — <span class="badge badge-${(client?.plan || 'free').toLowerCase()}">${client?.plan || 'FREE'}</span></p>
+          <p>${client?.organisation || ''} · <span class="badge badge-${(client?.plan || 'free').toLowerCase()}">${client?.plan || 'FREE'}</span></p>
         </div>
         <div id="dashboard-content">
           <p style="color:var(--fg-muted);">Chargement...</p>
@@ -286,16 +286,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         <div class="stats-grid">
           <div class="stat-card">
-            <div class="stat-value">${conso?.utilisateurs?.actuel ?? '—'}</div>
-            <div class="stat-label">Utilisateurs / ${conso?.utilisateurs?.max ?? '—'}</div>
+            <div class="stat-value">${conso?.utilisateurs?.actuel ?? '-'}</div>
+            <div class="stat-label">Utilisateurs / ${conso?.utilisateurs?.max ?? '-'}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${conso?.cours?.actuel ?? '—'}</div>
-            <div class="stat-label">Cours / ${conso?.cours?.max ?? '—'}</div>
+            <div class="stat-value">${conso?.cours?.actuel ?? '-'}</div>
+            <div class="stat-label">Cours / ${conso?.cours?.max ?? '-'}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${conso?.stockage ? (conso.stockage.utiliseMo / 1024).toFixed(1) : '—'}</div>
-            <div class="stat-label">Go utilisés / ${conso?.stockage?.maxGo ?? '—'} Go</div>
+            <div class="stat-value">${conso?.stockage ? (conso.stockage.utiliseMo / 1024).toFixed(1) : '-'}</div>
+            <div class="stat-label">Go utilisés / ${conso?.stockage?.maxGo ?? '-'} Go</div>
           </div>
         </div>
 
@@ -379,7 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="auth-container">
         <div class="auth-card" style="max-width:460px;">
           <h1>Passer en ${cible.nom}</h1>
-          <p class="subtitle">${prixTexte(cible.prix)}/mois — ${cible.maxUtilisateurs} utilisateurs, ${cible.stockageGo} Go, support ${cible.supportDelai}</p>
+          <p class="subtitle">${prixTexte(cible.prix)}/mois : ${cible.maxUtilisateurs} utilisateurs, ${cible.stockageGo} Go, support ${cible.supportDelai}</p>
           <div id="upgrade-alert"></div>
           <div class="alert alert-info">
             MVP : utilisez la carte de test <strong>4242 4242 4242 4242</strong>

@@ -1,0 +1,74 @@
+# Tests des règles : docker run --rm --entrypoint promtool -v "$PWD":/c -w /c prom/prometheus:v2.53.2 test rules alerts.test.yml
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  # Pau à 90 % de ses utilisateurs, 2 copies de l'API : une seule alerte
+  - interval: 15s
+    input_series:
+      - series: 'sharedmoodle_tenant_usage_ratio{job="api",instance="10.0.0.5:9464",tenant="pau",plan="FREE",resource="utilisateurs"}'
+        values: '0.9x10'
+      - series: 'sharedmoodle_tenant_usage_ratio{job="api",instance="10.0.0.6:9464",tenant="pau",plan="FREE",resource="utilisateurs"}'
+        values: '0.9x10'
+      - series: 'sharedmoodle_tenant_usage_ratio{job="api",instance="10.0.0.5:9464",tenant="bayonne",plan="GOLD",resource="cours"}'
+        values: '1.1x10'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: EtablissementLimiteProche
+        exp_alerts:
+          - exp_labels: { severity: warning, tenant: pau, plan: FREE, resource: utilisateurs }
+            exp_annotations:
+              summary: "pau : utilisateurs à 90% du forfait FREE"
+      - eval_time: 2m
+        alertname: EtablissementLimiteAtteinte
+        exp_alerts:
+          - exp_labels: { severity: critical, tenant: bayonne, plan: GOLD, resource: cours }
+            exp_annotations:
+              summary: "bayonne : limite cours atteinte (forfait GOLD)"
+
+  # API : 2 copies limitées à 0,5 CPU, chacune utilise 0,4 cœur : 80 % de la limite.
+  # Une 3e copie arrêtée (/c, plus vue depuis 3 min) ne doit pas compter.
+  - interval: 15s
+    input_series:
+      - series: 'container_last_seen{id="/a",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '0+15x20'
+      - series: 'container_last_seen{id="/b",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '0+15x20'
+      - series: 'container_last_seen{id="/c",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '0x20'
+      - series: 'container_spec_cpu_quota{id="/c",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '50000x20'
+      - series: 'container_spec_cpu_period{id="/c",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '100000x20'
+      - series: 'container_cpu_usage_seconds_total{id="/a",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '0+6x20'
+      - series: 'container_cpu_usage_seconds_total{id="/b",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '0+6x20'
+      - series: 'container_spec_cpu_quota{id="/a",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '50000x20'
+      - series: 'container_spec_cpu_quota{id="/b",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '50000x20'
+      - series: 'container_spec_cpu_period{id="/a",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '100000x20'
+      - series: 'container_spec_cpu_period{id="/b",container_label_com_docker_swarm_service_name="sharedmoodle_api"}'
+        values: '100000x20'
+    promql_expr_test:
+      - expr: sharedmoodle:service_cpu_ratio
+        eval_time: 4m
+        exp_samples:
+          - labels: 'sharedmoodle:service_cpu_ratio{container_label_com_docker_swarm_service_name="sharedmoodle_api",service="sharedmoodle_api"}'
+            value: 0.8
+      - expr: sharedmoodle:service_tasks
+        eval_time: 4m
+        exp_samples:
+          - labels: 'sharedmoodle:service_tasks{container_label_com_docker_swarm_service_name="sharedmoodle_api",service="sharedmoodle_api"}'
+            value: 2
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ServiceCpuEleve
+        exp_alerts:
+          - exp_labels: { severity: warning, service: sharedmoodle_api, container_label_com_docker_swarm_service_name: sharedmoodle_api }
+            exp_annotations:
+              summary: "sharedmoodle_api à 80% de sa limite CPU depuis 3 min"

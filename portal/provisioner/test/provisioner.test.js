@@ -21,3 +21,11 @@ test('le mot de passe de base est stable et propre à chaque établissement', ()
 test('chaque forfait a ses ressources', () => {
   assert.deepEqual(Object.keys(PLAN_RESOURCES), ['FREE', 'GOLD', 'PLATINUM']);
 });
+
+test('sans NFS_ADDR, la pile utilise seulement tenant-stack.yml', () => {
+  const { deployArgs } = require('../src/index');
+  const args = deployArgs('pau');
+  assert.equal(args.filter((a) => a === '-c').length, 1);
+  assert.equal(args.at(-1), 'sm-pau');
+  assert.equal(deployArgs('pau', 'nfs').filter((a) => a === '-c').length, 2);
+});

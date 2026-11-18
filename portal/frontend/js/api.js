@@ -1,5 +1,5 @@
 // ============================================================
-// SharedMoodle — Client API
+// SharedMoodle : Client API
 // ============================================================
 
 // nginx du portail transmet /api/ au service "api" (voir nginx.conf)

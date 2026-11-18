@@ -9,6 +9,7 @@ const { generalLimiter } = require('./middleware/rateLimiter');
 const { migrate } = require('./config/migrate');
 const { PLANS, PLAN_ORDER } = require('./config/plans');
 const { refreshAll } = require('./services/usage');
+const { compterRequetes, startMetricsServer } = require('./services/metrics');
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -25,6 +26,7 @@ app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 2));
 // ============================================================
 // Middlewares globaux
 // ============================================================
+app.use(compterRequetes);
 app.use(helmet());
 const developmentOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5500,http://localhost:8080')
   .split(',')
@@ -83,6 +85,9 @@ if (require.main === module) {
       // Mesure et limites appliquées pour tous les clients, toutes les 5 min
       const periode = Number(process.env.USAGE_REFRESH_SECONDS || 300) * 1000;
       setInterval(() => refreshAll().catch((e) => console.error('Mesure périodique :', e.message)), periode).unref();
+      // Port interne pour Prometheus (non publié) ; 0 = désactivé
+      const metricsPort = Number(process.env.METRICS_PORT ?? 9464);
+      if (metricsPort) startMetricsServer(metricsPort);
       app.listen(PORT, () => {
         console.log(`SharedMoodle API démarrée sur le port ${PORT}`);
         console.log(`Environnement : ${process.env.NODE_ENV || 'development'}`);

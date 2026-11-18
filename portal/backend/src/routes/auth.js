@@ -29,7 +29,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 });
 
 // ============================================================
-// POST /api/auth/register — Inscription d'un nouveau client
+// POST /api/auth/register : Inscription d'un nouveau client
 // ============================================================
 router.post(
   '/register',
@@ -144,7 +144,7 @@ router.post(
 );
 
 // ============================================================
-// POST /api/auth/login — Connexion
+// POST /api/auth/login : Connexion
 // ============================================================
 router.post(
   '/login',
@@ -224,7 +224,7 @@ router.post(
 );
 
 // ============================================================
-// POST /api/auth/logout — Déconnexion
+// POST /api/auth/logout : Déconnexion
 // ============================================================
 router.post('/logout', (req, res) => {
   res.clearCookie('token');

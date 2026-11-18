@@ -1,105 +1,195 @@
 # SharedMoodle
 
-Prototype simple d'une plateforme permettant à des clients de gérer un abonnement FREE ou GOLD et d'accéder à un Moodle de démonstration.
+Plateforme SaaS qui donne à chaque établissement scolaire son propre Moodle, créé à l'inscription, sur un cluster Docker Swarm. Trois forfaits (FREE, GOLD, PLATINUM) fixent les limites et les ressources de chaque Moodle.
 
-## Ce que contient le projet
+Projet de groupe, cours Cloud Computing, M1 SIGLIS, UPPA.
 
-- un portail web d'inscription et de connexion ;
-- une API Node.js et Express ;
-- PostgreSQL pour les comptes et les abonnements ;
-- un Moodle dédié par client (sa base, son volume, son réseau), créé à l'inscription ;
-- une page de consommation ;
-- un paiement simulé pour passer de FREE à GOLD.
+## Sommaire
 
-## Démarrage en local (Mac ou PC, Docker Desktop)
+1. [Architecture](#architecture)
+2. [Lancer en local](#lancer-en-local-mac-ou-pc)
+3. [Déployer sur le Swarm](#déployer-sur-le-swarm-vm)
+4. [Un Moodle par établissement](#un-moodle-par-établissement-multi-tenant)
+5. [Élasticité](#élasticité)
+6. [Supervision](#supervision-prometheus-et-grafana)
+7. [Stockage partagé NFS](#stockage-partagé-nfs)
+8. [Tests et preuves](#tests-et-preuves)
+9. [Forfaits](#forfaits)
+10. [Structure du dépôt](#structure-du-dépôt)
+
+## Architecture
+
+```text
+                     Traefik (port 80, routage par nom)
+     ┌──────────────┬──────────────┼───────────────┬──────────────────┐
+portail.sharedmoodle  api.        grafana.     <slug>.sharedmoodle (un par client)
+     │                 │              │               │
+  frontend (nginx) ─► api (Node) ─► provisioner ─► pile sm-<slug> : Moodle + MariaDB
+     x2                x2   │          (socket Docker)   volumes, réseau, secrets propres
+                            ├─► PostgreSQL (clients, forfaits, paiements, consommation)
+                            └─► bases des établissements (réseau sm_admin : mesure, limites)
+
+Supervision : cAdvisor + node-exporter (chaque nœud) ─► Prometheus ─► Grafana
+```
+
+| Service | Rôle | Copies |
+|---|---|---|
+| `traefik` | Porte d'entrée, routage par nom, routage selon la santé des tâches | 1 (manager) |
+| `frontend` | Portail web, transmet `/api` à l'API | 2 |
+| `api` | Inscription, connexion, abonnement, paiement simulé, consommation, limites | 2 |
+| `provisioner` | Seul service qui pilote Docker : crée la pile Moodle de chaque client | 1 (manager) |
+| `postgres` | Base du portail | 1 (nœud `db`) |
+| `prometheus`, `grafana` | Métriques, alertes, tableaux | 1 chacun (manager) |
+| `cadvisor`, `node-exporter` | Métriques des conteneurs et des nœuds | 1 par nœud |
+| `portainer` | Interface web du cluster | 1 (manager) |
+
+Chaque service a un healthcheck, des limites CPU et mémoire, une mise à jour continue avec retour arrière automatique, et des images versionnées.
+
+## Lancer en local (Mac ou PC)
+
+Prérequis : Docker Desktop.
 
 ```bash
+git clone https://github.com/NumCaps69/sharedmoodle.git
+cd sharedmoodle
 docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-- portail : `http://localhost:8080` (l'API est servie sous `/api`) ;
-- Moodle : `http://localhost:8081` (compte admin défini dans `docker-compose.dev.yml`, valeurs de test uniquement) ;
-- API : `http://localhost:8080/api/health`.
+| Adresse | Contenu |
+|---|---|
+| http://localhost:8080 | Portail (l'API est servie sous `/api`) |
+| http://localhost:8080/api/health | État et version de l'API |
+| http://localhost:8081 | Moodle de démonstration (compte admin dans `docker-compose.dev.yml`, valeurs de test) |
 
-Les fichiers de `portal/frontend` et `portal/backend/src` sont montés dans les conteneurs : une modification est visible sans reconstruire l'image.
+Avec la supervision en plus :
+
+```bash
+docker compose -f docker-compose.dev.yml --profile monitoring up -d --build
+```
+
+Grafana : http://localhost:3001 (`admin` / `devgrafana`), Prometheus : http://localhost:9090.
+
+Les dossiers `portal/frontend` et `portal/backend/src` sont montés dans les conteneurs : une modification est visible sans reconstruire. En local il n'y a pas de provisioner : tous les comptes partagent le Moodle de démonstration.
 
 Arrêter : `docker compose -f docker-compose.dev.yml down` (ajouter `-v` pour effacer les données).
 
-## Déploiement sur le Swarm (VM)
+## Déployer sur le Swarm (VM)
 
-1. Créer les secrets une seule fois (mots de passe aléatoires, copie dans `~/sharedmoodle-secrets.txt`) :
+Le cluster est fait de conteneurs Docker-in-Docker (`manager1`, `worker1`, `worker2`) sur la VM. Toutes les commandes se lancent sur la VM.
+
+1. Récupérer le code :
    ```bash
+   git clone https://github.com/NumCaps69/sharedmoodle.git ~/sharedmoodle
+   cd ~/sharedmoodle
+   ```
+2. Étiqueter les nœuds (où tourne quoi) :
+   ```bash
+   docker exec manager1 docker node update --label-add role=manager manager1
+   docker exec manager1 docker node update --label-add role=app worker1
+   docker exec manager1 docker node update --label-add role=db worker2
+   ```
+3. Créer le réseau public et les secrets (une seule fois) :
+   ```bash
+   docker exec manager1 docker network create -d overlay --attachable proxy
    ./scripts/create-secrets.sh
    ```
-2. Déployer ou mettre à jour la pile (`--prune` retire les anciens services `moodle` et `mariadb` de la pile, remplacés par un Moodle par établissement) :
+   Les valeurs sont gardées dans `~/sharedmoodle-secrets.txt` (dont le mot de passe Grafana).
+4. Déployer :
    ```bash
-   docker exec -i manager1 docker stack deploy --prune -c - sharedmoodle < ~/sharedmoodle/docker-compose.yml
+   docker exec -i manager1 docker stack deploy --prune -c - sharedmoodle < docker-compose.yml
+   docker exec manager1 docker service ls
    ```
-3. Après un changement de code : construire l'image en amd64 et mettre à jour le service, par exemple :
-   ```bash
-   docker buildx build --platform linux/amd64 -t kasupremacy/sharedmoodle-api:latest --push portal/backend
-   docker exec -it manager1 docker service update --image kasupremacy/sharedmoodle-api:latest --force sharedmoodle_api
+5. Sur le poste de démo, ajouter dans `/etc/hosts` (adresse de la VM) :
+   ```text
+   10.3.16.177 portail.sharedmoodle api.sharedmoodle grafana.sharedmoodle pau.sharedmoodle bayonne.sharedmoodle
    ```
 
-Aucun mot de passe n'est écrit dans `docker-compose.yml` : les services lisent les Docker secrets montés dans `/run/secrets/`. L'API crée les tables PostgreSQL au démarrage si elles n'existent pas.
+Nouvelle version : `./scripts/release.sh 1.2.0` construit les images en amd64 (même depuis un Mac arm64), les publie sur Docker Hub et écrit le numéro dans `docker-compose.yml`. Ensuite `git push`, puis `git pull` et l'étape 4 sur la VM. Le Swarm met à jour une copie à la fois et revient seul à l'ancienne version si la nouvelle échoue (retour manuel : `docker service rollback <service>`).
+
+Aucun mot de passe n'est écrit dans le dépôt : les services lisent les Docker secrets dans `/run/secrets/`. L'API crée les tables PostgreSQL au démarrage.
 
 ## Un Moodle par établissement (multi-tenant)
 
-À l'inscription, l'API demande au **provisioner** de créer la pile `sm-<slug>` du client (`portal/provisioner/tenant-stack.yml`) :
+À l'inscription, l'API demande au provisioner de créer la pile `sm-<slug>` du client (`portal/provisioner/tenant-stack.yml`) :
 
 - son Moodle et sa base MariaDB, ses volumes, son réseau, ses secrets ;
-- adresse `http://<slug>.sharedmoodle` (Traefik) ; admin Moodle = `admin` / mot de passe du portail ;
-- ressources selon le forfait (FREE 0,5 CPU / 768 Mo, GOLD 1 CPU / 1 Go, PLATINUM 2 CPU / 2 Go), mises à jour au changement de forfait.
+- l'adresse `http://<slug>.sharedmoodle` ; admin Moodle : `admin` avec le mot de passe du portail ;
+- des ressources selon le forfait (FREE 0,5 CPU / 768 Mo, GOLD 1 CPU / 1 Go, PLATINUM 2 CPU / 2 Go), agrandies au passage à un forfait supérieur.
 
-Le provisioner est le seul service qui accède au socket Docker ; il n'est pas exposé et n'accepte que l'API (jeton secret). L'API joint les bases des établissements par le réseau `sm_admin` pour mesurer la consommation et appliquer les limites : au-delà du forfait, les utilisateurs les plus récents sont suspendus et les cours les plus récents masqués ; ils sont rétablis au passage à un forfait supérieur. Rapport d'usage : `GET /api/subscription/report` (`?format=csv`).
+Le provisioner est le seul service qui accède au socket Docker. Il n'est pas exposé et n'accepte que l'API (jeton secret). L'API joint les bases des établissements par le réseau `sm_admin` pour mesurer la consommation et appliquer les limites : au-delà du forfait, les utilisateurs les plus récents sont suspendus et les cours les plus récents masqués, puis rétablis au passage à un forfait supérieur. Rapport d'usage : `GET /api/subscription/report` (`?format=csv`).
 
-Tests d'isolation entre deux établissements : `./scripts/test-isolation.sh pau bayonne` (exemple : `docs/preuves/isolation-pau-bayonne.txt`).
-
-Pour tester sur un poste, ajouter les noms dans `/etc/hosts` (adresse de la VM) : `portail.sharedmoodle api.sharedmoodle pau.sharedmoodle bayonne.sharedmoodle`.
-
-## Élasticité (sur la VM)
+## Élasticité
 
 | Script | Rôle |
 |---|---|
-| `scripts/scale-demo.sh horizontal api 4` | Scalabilité horizontale : passer à 4 copies puis revenir |
-| `scripts/scale-demo.sh vertical api` | Scalabilité verticale d'un service : changer ses limites CPU/mémoire |
-| `scripts/scale-demo.sh noeud worker1` | Scalabilité verticale d'un nœud : changer le CPU/mémoire du conteneur DinD |
-| `scripts/autoscaler.sh` | Ajoute ou retire des copies selon le CPU (70 % / 25 % de la limite) ; journal dans `autoscaler.csv` |
-| `scripts/load-test.sh api 120 50` | Test de charge avec `ab` pour déclencher l'autoscaler |
+| `scripts/scale-demo.sh horizontal api 4` | Scalabilité horizontale : 4 copies, puis retour |
+| `scripts/scale-demo.sh vertical api` | Scalabilité verticale d'un service : limites CPU et mémoire |
+| `scripts/scale-demo.sh noeud worker1` | Scalabilité verticale d'un nœud : CPU et mémoire du conteneur DinD |
+| `scripts/autoscaler.sh` | +1 copie au-dessus de 70 % de la limite CPU, -1 sous 25 % ; journal `autoscaler.csv` |
+| `scripts/load-test.sh api 120 50` | Test de charge avec `ab` |
 
-Swarm ne fait pas d'autoscaling seul : `autoscaler.sh` mesure le CPU des tâches sur chaque nœud (`docker stats`) et appelle `docker service scale`. Exemple de résultat : `docs/preuves/autoscaler-test-local.csv`.
+Swarm ne fait pas d'autoscaling seul. `autoscaler.sh` lit le CPU moyen de chaque service dans Prometheus (règle `sharedmoodle:service_cpu_ratio`, moyenne sur 1 minute, tous les nœuds) et appelle `docker service scale`. Sans Prometheus, il revient à `docker stats` (`SOURCE=stats` pour le forcer).
 
-## Fonctionnement simple
+## Supervision (Prometheus et Grafana)
 
-1. Le client s'inscrit sur le portail.
-2. Il reçoit automatiquement le forfait FREE.
-3. Il peut ouvrir le Moodle de démonstration.
-4. Il consulte son abonnement et sa consommation.
-5. Il peut passer en GOLD ou PLATINUM avec la carte `4242 4242 4242 4242` ; toute autre carte est refusée et il reste sur son forfait.
+- **cAdvisor** et **node-exporter** tournent sur chaque nœud (mode global) : CPU, mémoire, réseau des conteneurs et des nœuds.
+- **L'API** publie la consommation de chaque établissement sur un port interne (`9464`, jamais exposé) : utilisateurs, cours, stockage, limites du forfait, éléments bloqués.
+- **Traefik** publie le nombre de requêtes par site.
+- **Prometheus** collecte toutes les 15 s, garde 7 jours et calcule les alertes (`monitoring/prometheus/alerts.yml`) : établissement à 80 % puis 100 % de son forfait, éléments bloqués, mémoire pleine, cible injoignable, service au-dessus de 70 % de son CPU, nœud sans mémoire.
+- **Grafana** (http://grafana.sharedmoodle, compte `admin`, mot de passe dans `~/sharedmoodle-secrets.txt`) contient deux tableaux :
+  - *Établissements* : forfait, jauges de consommation, CPU et mémoire du Moodle et de sa base, requêtes, alertes, avec un choix de l'établissement ;
+  - *Plateforme* : copies par service (l'autoscaler en action), CPU en % de la limite, mémoire, trafic, nœuds, alertes actives.
+
+Prometheus n'a pas de mot de passe : il reste sur le réseau interne `monitoring`. Seul Grafana est publié.
+
+## Stockage partagé NFS
+
+Sans NFS, les fichiers d'un Moodle sont sur le disque du nœud où il tourne. Avec NFS, ils sont sur un serveur commun : si le nœud tombe, le Swarm relance le Moodle sur un autre nœud `app` avec les mêmes fichiers.
+
+```bash
+./scripts/setup-nfs.sh          # lance le serveur sm-nfs sur la VM et teste chaque nœud
+```
+
+Puis mettre `NFS_ADDR: sm-nfs` dans le service `provisioner` de `docker-compose.yml` et redéployer. Les nouveaux établissements ont leurs fichiers Moodle sur NFS (`portal/provisioner/tenant-nfs.yml`). Les bases MariaDB restent sur un volume local du nœud `db`, car une base de données sur NFS est déconseillée.
+
+## Tests et preuves
+
+| Commande | Vérifie |
+|---|---|
+| `cd portal/backend && npm test` | Forfaits, consommation, limites, métriques (16 tests) |
+| `cd portal/provisioner && npm test` | Noms d'établissement, mots de passe dérivés, ressources, NFS (4 tests) |
+| `docker run --rm --entrypoint promtool -v "$PWD/monitoring/prometheus":/c -w /c prom/prometheus:v2.53.2 test rules alerts.test.yml` | Alertes de limite et calcul CPU de l'autoscaler |
+| `./scripts/test-isolation.sh pau bayonne` | Isolation entre deux établissements (réseau, identifiants, secrets, volumes, sites) |
+| `./scripts/test-swarm.sh` | Quorum, maintenance d'un nœud, panne d'un nœud, retour |
+| `./scripts/setup-nfs.sh test` | Chaque nœud écrit sur le serveur NFS |
+
+Résultats déjà obtenus : `docs/preuves/`.
 
 ## Forfaits
 
-| Fonction | FREE | GOLD | PLATINUM |
+| | FREE | GOLD | PLATINUM |
 |---|---:|---:|---:|
 | Prix | 0 € | 29,99 €/mois | 99,99 €/mois |
 | Utilisateurs | 50 | 500 | 5000 |
-| Cours | 5 | Illimités | Illimités |
+| Cours | 5 | illimités | illimités |
 | Stockage | 1 Go | 20 Go | 100 Go |
-| Plugins personnalisés | Non | Oui | Oui |
-| Support | 48h | 4h | 1h |
+| Moodle (CPU / mémoire) | 0,5 / 768 Mo | 1 / 1 Go | 2 / 2 Go |
+| Plugins personnalisés | non | oui | oui |
+| Support | 48 h | 4 h | 1 h |
 
-La consommation est mesurée dans la base Moodle ; une alerte apparaît à 80 % d'une limite, avec la proposition du forfait supérieur.
+Paiement simulé : la carte `4242 4242 4242 4242` est acceptée, toute autre est refusée et le client garde son forfait.
 
-## Structure
+## Structure du dépôt
 
 ```text
-portal/backend/         API, authentification, abonnements, mesure de consommation
-portal/backend/sql/     Schéma PostgreSQL (appliqué par l'API)
-portal/frontend/        Interface web (nginx, transmet /api à l'API)
-portal/provisioner/     Création des piles Moodle des établissements
-scripts/                secrets, publication, élasticité, tests d'isolation
-docker-compose.yml      Pile Docker Swarm
-docker-compose.dev.yml  Lancement local
+portal/backend/          API : authentification, abonnements, consommation, limites, métriques
+portal/backend/sql/      Schéma PostgreSQL (appliqué par l'API au démarrage)
+portal/frontend/         Portail web (nginx, transmet /api à l'API)
+portal/provisioner/      Création des piles Moodle (tenant-stack.yml, tenant-nfs.yml)
+monitoring/prometheus/   Configuration, règles et tests des alertes
+monitoring/grafana/      Source de données et tableaux
+scripts/                 Secrets, publication, élasticité, NFS, tests
+docs/preuves/            Résultats des tests
+docker-compose.yml       Pile Docker Swarm
+docker-compose.dev.yml   Lancement local
 ```
-
-À venir : supervision (Prometheus/Grafana), stockage NFS.

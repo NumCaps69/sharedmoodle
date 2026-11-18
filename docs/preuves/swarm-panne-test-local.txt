@@ -1,0 +1,34 @@
+=== Tests Swarm : 2026-11-18 23:07:37 ===
+ID                            HOSTNAME      STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+8fxfhu9gqpajsjjc4uf2720pz *   smt-manager   Ready     Active         Leader           27.5.1
+apsgigwnj7ux1yt988k24lfkj     smt-worker1   Ready     Active                          27.5.1
+qaa0rlfd7ptb0g3ydzsgppscz     smt-worker2   Ready     Active                          27.5.1
+
+--- 1. Quorum des managers ---
+[INFO] 1 manager(s) : quorum = 1, pannes de managers supportées = 0
+[INFO] Avec 1 manager, sa panne bloque les changements (déploiement, relance) ; les conteneurs déjà lancés continuent. Avec 3 managers, le cluster en supporte 1 : docker node promote worker1 worker2
+
+--- 2. Panne : arrêt du nœud smt-worker1 ---
+[INFO] tâches sur smt-worker1 avant la panne : 2 (sharedmoodle_frontend.1 sharedmoodle_moodle-pau.1 )
+[PASS] panne : smt-worker1 vu Down par le manager en 12s
+[INFO] panne : services sans autre nœud possible (contrainte de placement) : sharedmoodle_moodle-pau (1 en attente);
+[PASS] panne : le portail répond pendant la panne (HTTP 200)
+
+--- 3. Retour du nœud smt-worker1 ---
+[PASS] retour : smt-worker1 de nouveau Ready en 3s
+[PASS] retour : tous les services ont leurs copies
+[INFO] le Swarm ne rééquilibre pas seul les copies vers smt-worker1 : docker service update --force <service> si besoin
+
+--- 4. Maintenance : drain de smt-worker2 ---
+[PASS] drain : 2 tâche(s) retirée(s) de smt-worker2 en 0s
+[PASS] drain : tous les services gardent leurs copies
+[PASS] drain : le portail répond (HTTP 200)
+[INFO] smt-worker2 remis en service (active)
+
+--- État final ---
+ID             NAME                      MODE         REPLICAS   IMAGE                                     PORTS
+zgcxd0qgmhyt   sharedmoodle_frontend     replicated   2/2        kasupremacy/sharedmoodle-frontend:1.1.0   
+b8m0iugf57qo   sharedmoodle_moodle-pau   replicated   1/1        nginx:alpine                              
+4o6dd564tt34   sharedmoodle_traefik      replicated   1/1        traefik:v2.10                             
+
+=== 7 réussis, 0 échoués ===

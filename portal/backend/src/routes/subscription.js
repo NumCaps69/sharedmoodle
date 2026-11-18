@@ -12,7 +12,7 @@ const router = express.Router();
 router.use(authMiddleware);
 
 // ============================================================
-// GET /api/subscription — Mon abonnement actuel
+// GET /api/subscription : Mon abonnement actuel
 // ============================================================
 router.get('/', async (req, res) => {
   try {
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
 });
 
 // ============================================================
-// GET /api/subscription/consumption — Ma consommation
+// GET /api/subscription/consumption : Ma consommation
 // Mesurée dans Moodle à chaque appel, avec alertes de limite
 // ============================================================
 router.get('/consumption', async (req, res) => {
@@ -103,7 +103,7 @@ router.get('/consumption', async (req, res) => {
 });
 
 // ============================================================
-// POST /api/subscription/upgrade — Passer à un forfait supérieur
+// POST /api/subscription/upgrade : Passer à un forfait supérieur
 // Corps : { numeroCarte, plan } ; plan = GOLD (défaut) ou PLATINUM
 // ============================================================
 router.post(
@@ -233,7 +233,7 @@ router.post(
 );
 
 // ============================================================
-// GET /api/subscription/instance — Mon instance Moodle
+// GET /api/subscription/instance : Mon instance Moodle
 // ============================================================
 router.get('/instance', async (req, res) => {
   try {
@@ -271,7 +271,7 @@ router.get('/instance', async (req, res) => {
 });
 
 // ============================================================
-// GET /api/subscription/report[?format=csv] — Rapport d'usage
+// GET /api/subscription/report[?format=csv] : Rapport d'usage
 // Forfait, limites, consommation actuelle, historique 30 jours,
 // éléments bloqués et paiements. Généré à la demande.
 // ============================================================
