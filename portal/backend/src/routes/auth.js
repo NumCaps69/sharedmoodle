@@ -5,6 +5,7 @@ const db = require('../config/database');
 const { authMiddleware, generateToken } = require('../middleware/auth');
 const { loginLimiter, registerLimiter } = require('../middleware/rateLimiter');
 const { findUniqueSlug } = require('../services/clients');
+const { provisionerEnabled, tenantUrl, createTenant } = require('../services/tenants');
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 });
 
 // ============================================================
-// POST /api/auth/register — Inscription d'un nouveau client
+// POST /api/auth/register : Inscription d'un nouveau client
 // ============================================================
 router.post(
   '/register',
@@ -76,14 +77,29 @@ router.post(
         [client.id]
       );
 
-      const moodleUrl = process.env.MOODLE_URL || 'http://localhost:8081';
+      // Un Moodle isolé par client (pile sm-<slug>) si le provisioner est configuré,
+      // sinon le Moodle de démonstration partagé (lancement local).
+      const dedie = provisionerEnabled();
+      const moodleUrl = dedie ? tenantUrl(slug) : (process.env.MOODLE_URL || 'http://localhost:8081');
+      let statutInstance = dedie ? 'PROVISIONING' : 'RUNNING';
       await db.query(
-        `INSERT INTO instances_moodle (client_id, slug, url, statut)
-         VALUES ($1, $2, $3, 'RUNNING')`,
-        [client.id, slug, moodleUrl]
+        `INSERT INTO instances_moodle (client_id, slug, url, docker_stack_name, statut)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [client.id, slug, moodleUrl, dedie ? `sm-${slug}` : null, statutInstance]
       );
       await db.query(`INSERT INTO consommation (client_id) VALUES ($1)`, [client.id]);
       await db.query(`UPDATE clients SET statut = 'ACTIVE' WHERE id = $1`, [client.id]);
+
+      if (dedie) {
+        try {
+          // Le mot de passe du portail devient celui de l'admin du Moodle (transmis une fois, non stocké)
+          await createTenant({ slug, plan: 'FREE', email, name: organisation, adminPassword: password });
+        } catch (err) {
+          console.error(`Création du Moodle ${slug} impossible :`, err.message);
+          statutInstance = 'ERROR';
+          await db.query(`UPDATE instances_moodle SET statut = 'ERROR' WHERE client_id = $1`, [client.id]);
+        }
+      }
 
       // Log d'audit
       await db.query(
@@ -104,7 +120,9 @@ router.post(
       });
 
       res.status(201).json({
-        message: 'Inscription réussie ! Le Moodle de démonstration est disponible.',
+        message: dedie
+          ? `Inscription réussie ! Votre Moodle ${moodleUrl} est en cours de création (quelques minutes). Connexion : admin / votre mot de passe du portail.`
+          : 'Inscription réussie ! Le Moodle de démonstration est disponible.',
         client: {
           id: client.id,
           email: client.email,
@@ -115,7 +133,7 @@ router.post(
         },
         instance: {
           url: moodleUrl,
-          status: 'RUNNING',
+          status: statutInstance,
         },
       });
     } catch (err) {
@@ -126,7 +144,7 @@ router.post(
 );
 
 // ============================================================
-// POST /api/auth/login — Connexion
+// POST /api/auth/login : Connexion
 // ============================================================
 router.post(
   '/login',
@@ -206,7 +224,7 @@ router.post(
 );
 
 // ============================================================
-// POST /api/auth/logout — Déconnexion
+// POST /api/auth/logout : Déconnexion
 // ============================================================
 router.post('/logout', (req, res) => {
   res.clearCookie('token');

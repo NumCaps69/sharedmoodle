@@ -1,0 +1,25 @@
+date,service,replicas,cpu_pct_limite,action,nouveaux_replicas,source
+2026-11-18 22:53:42,sharedmoodle_api,2,0,aucune,2,prometheus
+2026-11-18 22:53:58,sharedmoodle_api,2,0,aucune,2,prometheus
+2026-11-18 22:54:14,sharedmoodle_api,2,8,aucune,2,prometheus
+2026-11-18 22:54:30,sharedmoodle_api,2,64,monte,3,prometheus
+2026-11-18 22:54:48,sharedmoodle_api,3,70,aucune,3,prometheus
+2026-11-18 22:55:06,sharedmoodle_api,3,70,monte,4,prometheus
+2026-11-18 22:55:21,sharedmoodle_api,4,42,aucune,4,prometheus
+2026-11-18 22:55:37,sharedmoodle_api,4,48,aucune,4,prometheus
+2026-11-18 22:55:53,sharedmoodle_api,4,36,aucune,4,prometheus
+2026-11-18 22:56:09,sharedmoodle_api,4,30,aucune,4,prometheus
+2026-11-18 22:56:25,sharedmoodle_api,4,37,aucune,4,prometheus
+2026-11-18 22:56:41,sharedmoodle_api,4,20,aucune,4,prometheus
+2026-11-18 22:56:56,sharedmoodle_api,4,6,descend,3,prometheus
+2026-11-18 22:57:12,sharedmoodle_api,3,0,aucune,3,prometheus
+2026-11-18 22:57:28,sharedmoodle_api,3,0,aucune,3,prometheus
+2026-11-18 22:57:44,sharedmoodle_api,3,0,descend,2,prometheus
+2026-11-18 22:58:00,sharedmoodle_api,2,1,aucune,2,prometheus
+2026-11-18 22:58:17,sharedmoodle_api,2,1,aucune,2,prometheus
+2026-11-18 22:58:33,sharedmoodle_api,2,0,aucune,2,prometheus
+2026-11-18 22:58:49,sharedmoodle_api,2,0,aucune,2,prometheus
+2026-11-18 22:59:06,sharedmoodle_api,2,0,aucune,2,prometheus
+2026-11-18 22:59:22,sharedmoodle_api,2,0,aucune,2,prometheus
+2026-11-18 22:59:38,sharedmoodle_api,2,0,aucune,2,prometheus
+2026-11-18 22:59:54,sharedmoodle_api,2,0,aucune,2,prometheus

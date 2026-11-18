@@ -1,0 +1,19 @@
+date,service,replicas,cpu_pct_limite,action,nouveaux_replicas
+2026-11-18 20:36:51,smtest_web,1,0,aucune,1
+2026-11-18 20:36:59,smtest_web,1,98,monte,2
+2026-11-18 20:37:09,smtest_web,2,54,aucune,2
+2026-11-18 20:37:17,smtest_web,2,49,aucune,2
+2026-11-18 20:37:25,smtest_web,2,51,aucune,2
+2026-11-18 20:37:35,smtest_web,2,58,aucune,2
+2026-11-18 20:37:43,smtest_web,2,100,monte,3
+2026-11-18 20:37:51,smtest_web,3,67,aucune,3
+2026-11-18 20:37:59,smtest_web,3,7,aucune,3
+2026-11-18 20:38:07,smtest_web,3,0,descend,2
+2026-11-18 20:38:15,smtest_web,2,0,aucune,2
+2026-11-18 20:38:23,smtest_web,2,0,aucune,2
+2026-11-18 20:38:30,smtest_web,2,0,descend,1
+2026-11-18 20:38:37,smtest_web,1,0,aucune,1
+2026-11-18 20:38:44,smtest_web,1,0,aucune,1
+2026-11-18 20:38:51,smtest_web,1,0,aucune,1
+2026-11-18 20:38:58,smtest_web,1,0,aucune,1
+2026-11-18 20:39:06,smtest_web,1,0,aucune,1

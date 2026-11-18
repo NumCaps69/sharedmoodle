@@ -1,0 +1,10 @@
+=== Isolation pau / bayonne : 2026-11-18 21:11:19 ===
+[PASS] réseau : le Moodle de pau joint sa propre base
+[PASS] réseau : le Moodle de pau ne joint pas la base de bayonne
+[PASS] réseau : le Moodle de bayonne ne joint pas la base de pau
+[PASS] identifiants : le mot de passe de bayonne ouvre la base de bayonne
+[PASS] identifiants : le mot de passe de pau est refusé par la base de bayonne
+[PASS] secrets : le Moodle de pau reçoit seulement : sm-pau_admin_password sm-pau_db_password 
+[PASS] volumes : séparés : sm-bayonne_db-data sm-bayonne_moodle-data sm-bayonne_moodle-files sm-pau_db-data sm-pau_moodle-data sm-pau_moodle-files 
+[PASS] sites : pau.sharedmoodle = « Log in to the site | Pau », bayonne.sharedmoodle = « Log in to the site | Bayonne »
+=== 8 réussis, 0 échoués ===

@@ -1,0 +1,22 @@
+Test local du 18/11/2026 : Swarm jetable 1 nœud (Docker-in-Docker sur Mac), pile sharedmoodle complète.
+
+D3 : Création automatique à l'inscription
+  POST /api/auth/register (organisation "Pau")      -> 201, pile sm-pau créée (sm-pau_db, sm-pau_moodle)
+  Moodle de Pau en ligne via Traefik (pau.sharedmoodle) après 170 s ; statut portail PROVISIONING -> RUNNING
+  POST /api/auth/register (organisation "Bayonne")  -> 201, pile sm-bayonne créée
+  Admin Moodle = admin / mot de passe du portail : validé par Moodle (validate_internal_user_password = oui)
+
+D5 : Consommation par établissement
+  Pau : mesurée dans sa propre base sm-pau_db (source "moodle"), via le réseau sm_admin
+  Rapport d'usage : GET /api/subscription/report (JSON) et ?format=csv (historique)
+
+D4 : Limites appliquées dans Moodle (forfait FREE = 50 utilisateurs)
+  54 utilisateurs ajoutés dans Moodle Pau (55 actifs avec admin)
+  -> consommation 50/50, alerte "Limite atteinte : utilisateurs", blocages {utilisateur: 5}
+  -> suspendus dans Moodle : etu50, etu51, etu52, etu53, etu54 (les plus récents)
+  Passage en GOLD (carte 4242...) :
+  -> ressources du Moodle Pau : 0,5 CPU / 768 Mo -> 1 CPU / 1 Go (pile redéployée par le provisioner)
+  -> 5 utilisateurs rétablis, consommation 55/500, aucun blocage
+
+D2 : Isolation : voir isolation-pau-bayonne.txt (8 réussis, 0 échoué)
+  Portail : le client Pau ne voit que http://pau.sharedmoodle, Bayonne que http://bayonne.sharedmoodle

@@ -3,3 +3,4 @@ node_modules/
 *.log
 infra/stacks/
 .DS_Store
+sharedmoodle-secrets.txt

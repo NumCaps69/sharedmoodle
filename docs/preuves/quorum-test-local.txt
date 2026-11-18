@@ -1,0 +1,20 @@
+=== Quorum Raft : test local 2026-11-18 23:09:31 (3 nœuds DinD) ===
+3 managers :
+smt-manager Ready Leader
+smt-worker1 Ready Reachable
+smt-worker2 Ready Reachable
+
+1 manager arrêté (smt-worker2) : quorum 2/3 gardé
+[PASS] le cluster accepte encore les changements (scale frontend=3)
+smt-manager Ready Leader
+smt-worker1 Ready Reachable
+smt-worker2 Down Unreachable
+
+2 managers arrêtés : quorum 1/3 perdu
+[PASS] changement refusé sans quorum : sharedmoodle_frontend: Error response from daemon: rpc error: code = Unknown desc = raft: failed to process the request:
+[INFO] portail : HTTP 404, ses copies tournaient sur les 2 nœuds arrêtés et le Swarm sans quorum ne peut pas les relancer ailleurs
+
+Retour des 2 managers :
+smt-manager Ready Leader
+smt-worker1 Ready Reachable
+smt-worker2 Ready Reachable

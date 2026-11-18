@@ -1,0 +1,130 @@
+# ============================================================
+# Règles Prometheus de SharedMoodle (C1, C2, C3)
+# - "record" : séries calculées, utilisées par Grafana et l'autoscaler
+# - "alert"  : alertes visibles dans Prometheus (/alerts) et Grafana
+# Les métriques de l'API existent une fois par copie de l'API :
+# "max without (instance)" évite les doublons.
+# ============================================================
+groups:
+  - name: sharedmoodle-calculs
+    rules:
+      # Conteneurs en marche : vus par cAdvisor il y a moins d'une minute.
+      # Les conteneurs arrêtés (anciennes copies, échecs) restent visibles
+      # quelques minutes avec une date ancienne : ils sont écartés.
+      - record: sharedmoodle:container_running
+        expr: (time() - container_last_seen{container_label_com_docker_swarm_service_name!=""}) < 60
+
+      # CPU d'un service en fraction de sa limite (1 = 100 %) : base de l'autoscaler
+      - record: sharedmoodle:service_cpu_ratio
+        expr: |
+          label_replace(
+            sum by (container_label_com_docker_swarm_service_name) (
+              rate(container_cpu_usage_seconds_total{container_label_com_docker_swarm_service_name!=""}[1m])
+              and on (id) sharedmoodle:container_running
+            )
+            /
+            sum by (container_label_com_docker_swarm_service_name) (
+              (
+                container_spec_cpu_quota{container_label_com_docker_swarm_service_name!=""}
+                / container_spec_cpu_period{container_label_com_docker_swarm_service_name!=""}
+                > 0
+              )
+              and on (id) sharedmoodle:container_running
+            ),
+            "service", "$1", "container_label_com_docker_swarm_service_name", "(.+)"
+          )
+
+      # Nombre de copies en marche d'un service
+      - record: sharedmoodle:service_tasks
+        expr: |
+          label_replace(
+            count by (container_label_com_docker_swarm_service_name) (sharedmoodle:container_running),
+            "service", "$1", "container_label_com_docker_swarm_service_name", "(.+)"
+          )
+
+      # CPU (cœurs) et mémoire de chaque établissement (pile sm-<slug>)
+      - record: sharedmoodle:tenant_cpu_cores
+        expr: |
+          label_replace(
+            sum by (container_label_com_docker_stack_namespace) (
+              rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace=~"sm-.+"}[1m])
+            ),
+            "tenant", "$1", "container_label_com_docker_stack_namespace", "sm-(.+)"
+          )
+      - record: sharedmoodle:tenant_memory_bytes
+        expr: |
+          label_replace(
+            sum by (container_label_com_docker_stack_namespace) (
+              container_memory_working_set_bytes{container_label_com_docker_stack_namespace=~"sm-.+"}
+            ),
+            "tenant", "$1", "container_label_com_docker_stack_namespace", "sm-(.+)"
+          )
+
+      # Consommation / limite, une seule série par établissement et ressource
+      - record: sharedmoodle:tenant_usage_ratio
+        expr: max without (instance, job) (sharedmoodle_tenant_usage_ratio)
+
+  - name: sharedmoodle-etablissements
+    rules:
+      - alert: EtablissementLimiteProche
+        expr: sharedmoodle:tenant_usage_ratio >= 0.8 and sharedmoodle:tenant_usage_ratio < 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.tenant }} : {{ $labels.resource }} à {{ $value | humanizePercentage }} du forfait {{ $labels.plan }}"
+
+      - alert: EtablissementLimiteAtteinte
+        expr: sharedmoodle:tenant_usage_ratio >= 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.tenant }} : limite {{ $labels.resource }} atteinte (forfait {{ $labels.plan }})"
+
+      - alert: EtablissementElementsBloques
+        expr: max without (instance, job) (sharedmoodle_tenant_blocked) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.tenant }} : {{ $value }} {{ $labels.type }}(s) bloqué(s) par le portail"
+
+      - alert: EtablissementMemoirePleine
+        expr: |
+          sum by (container_label_com_docker_stack_namespace, container_label_com_docker_swarm_service_name) (container_memory_working_set_bytes{container_label_com_docker_stack_namespace=~"sm-.+"})
+          /
+          sum by (container_label_com_docker_stack_namespace, container_label_com_docker_swarm_service_name) (container_spec_memory_limit_bytes{container_label_com_docker_stack_namespace=~"sm-.+"} > 0)
+          > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container_label_com_docker_swarm_service_name }} utilise plus de 90 % de sa mémoire"
+
+  - name: sharedmoodle-plateforme
+    rules:
+      - alert: CibleInjoignable
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} ({{ $labels.instance }}) ne répond plus à Prometheus"
+
+      # Même seuil que l'autoscaler (70 %) : s'il dure, l'autoscaler est au maximum
+      - alert: ServiceCpuEleve
+        expr: sharedmoodle:service_cpu_ratio > 0.7
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} à {{ $value | humanizePercentage }} de sa limite CPU depuis 3 min"
+
+      - alert: NoeudMemoireFaible
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} : moins de 10 % de mémoire libre"

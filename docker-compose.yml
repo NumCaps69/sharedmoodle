@@ -10,6 +10,13 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=proxy"
       - "--entrypoints.web.address=:80"
+      - "--ping=true"
+      # Métriques pour Prometheus (C1), sur un port interne non publié
+      - "--entrypoints.metrics.address=:8082"
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.entrypoint=metrics"
+      - "--metrics.prometheus.addServicesLabels=true"
+      - "--metrics.prometheus.addRoutersLabels=true"
     ports:
       - target: 80
         published: 80
@@ -19,9 +26,36 @@ services:
         mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - proxy
+      - monitoring
     deploy:
+      # 1 seule copie : port publié en mode host sur le manager
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+      # Arrêter l'ancienne avant la nouvelle (port publié en mode host / volume unique)
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
       placement:
         constraints:
           - node.labels.role == manager
@@ -38,17 +72,63 @@ services:
     networks:
       - proxy
     deploy:
+      # 1 seule copie : port publié en mode host sur le manager
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+        reservations:
+          cpus: "0.05"
+          memory: 64M
+      # Arrêter l'ancienne avant la nouvelle (port publié en mode host / volume unique)
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
       placement:
         constraints:
           - node.labels.role == manager
 
   frontend:
-    image: kasupremacy/sharedmoodle-frontend:latest
+    image: kasupremacy/sharedmoodle-frontend:1.1.0
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - sharedmoodle_net
       - proxy
     deploy:
-      replicas: 3
+      replicas: 2
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+      restart_policy:
+        condition: any
+        delay: 5s
       placement:
         constraints:
           - node.labels.role == manager
@@ -56,22 +136,65 @@ services:
         - "traefik.enable=true"
         - "traefik.http.routers.frontend.rule=Host(`portail.sharedmoodle`)"
         - "traefik.http.services.frontend.loadbalancer.server.port=80"
+        - "traefik.http.services.frontend.loadbalancer.healthcheck.path=/"
+        - "traefik.http.services.frontend.loadbalancer.healthcheck.interval=10s"
 
   api:
-    image: kasupremacy/sharedmoodle-api:latest
+    image: kasupremacy/sharedmoodle-api:1.1.0
     environment:
       NODE_ENV: development
       PORT: 3000
-      DATABASE_URL: postgresql://smadmin:devpassword@postgres:5432/sharedmoodle
-      JWT_SECRET: sharedmoodle-local-secret-change-before-production
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: sharedmoodle
+      POSTGRES_USER: smadmin
+      POSTGRES_PASSWORD_FILE: /run/secrets/sm_postgres_password
+      JWT_SECRET_FILE: /run/secrets/sm_jwt_secret
       DOMAIN: localhost
-      MOODLE_URL: http://pau.sharedmoodle
       FRONTEND_ORIGINS: http://portail.sharedmoodle
+      # Un Moodle par client, créé par le provisioner (pile sm-<slug>)
+      PROVISIONER_URL: http://provisioner:4000
+      PROVISIONER_TOKEN_FILE: /run/secrets/sm_provisioner_token
+      TENANT_MASTER_KEY_FILE: /run/secrets/sm_tenant_master_key
+      TENANT_DOMAIN: sharedmoodle
+      # Consommation des établissements pour Prometheus (port interne, non publié)
+      METRICS_PORT: 9464
+    secrets:
+      - sm_postgres_password
+      - sm_jwt_secret
+      - sm_provisioner_token
+      - sm_tenant_master_key
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     networks:
       - sharedmoodle_net
       - proxy
+      - admin
+      - monitoring
     deploy:
-      replicas: 3
+      replicas: 2
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+      restart_policy:
+        condition: any
+        delay: 5s
       placement:
         constraints:
           - node.labels.role == manager
@@ -79,26 +202,33 @@ services:
         - "traefik.enable=true"
         - "traefik.http.routers.api.rule=Host(`api.sharedmoodle`)"
         - "traefik.http.services.api.loadbalancer.server.port=3000"
+        - "traefik.http.services.api.loadbalancer.healthcheck.path=/api/health"
+        - "traefik.http.services.api.loadbalancer.healthcheck.interval=10s"
 
-  moodle:
-    image: bitnamilegacy/moodle:latest
+  # Seul service qui pilote Docker : crée la pile Moodle de chaque client.
+  # Pas exposé par Traefik ; appelé par l'API avec un jeton secret.
+  provisioner:
+    image: kasupremacy/sharedmoodle-provisioner:1.1.0
     environment:
-      MOODLE_DATABASE_TYPE: mariadb
-      MOODLE_DATABASE_HOST: tasks.mariadb
-      MOODLE_DATABASE_PORT_NUMBER: 3306
-      MOODLE_DATABASE_NAME: moodle
-      MOODLE_DATABASE_USER: moodle
-      MOODLE_DATABASE_PASSWORD: moodlepassword
-      MOODLE_USERNAME: admin
-      MOODLE_PASSWORD: admin12345
-      MOODLE_EMAIL: admin@sharedmoodle.local
-      MOODLE_SITE_NAME: SharedMoodle Pau
+      PROVISIONER_TOKEN_FILE: /run/secrets/sm_provisioner_token
+      TENANT_MASTER_KEY_FILE: /run/secrets/sm_tenant_master_key
+      TENANT_DOMAIN: sharedmoodle
+      # Stockage partagé NFS (E2) : vide = volumes locaux.
+      # Après ./scripts/setup-nfs.sh sur la VM, mettre : sm-nfs
+      NFS_ADDR: ""
+    secrets:
+      - sm_provisioner_token
+      - sm_tenant_master_key
     volumes:
-      - moodle-data:/bitnami/moodle
-      - moodle-files:/bitnami/moodledata
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - sharedmoodle_net
       - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:4000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     deploy:
       replicas: 1
       placement:
@@ -108,47 +238,269 @@ services:
         - "traefik.enable=true"
         - "traefik.http.routers.moodle.rule=Host(`pau.sharedmoodle`)"
         - "traefik.http.services.moodle.loadbalancer.server.port=8080"
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+      restart_policy:
+        condition: any
+        delay: 5s
+      placement:
+        constraints:
+          - node.role == manager
 
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: sharedmoodle
       POSTGRES_USER: smadmin
-      POSTGRES_PASSWORD: devpassword
+      POSTGRES_PASSWORD_FILE: /run/secrets/sm_postgres_password
+    secrets:
+      - sm_postgres_password
     volumes:
       - postgres-data:/var/lib/postgresql/data
     deploy:
+      # 1 seule copie : service avec état (une base = un seul écrivain)
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+      # Base de données : arrêter l'ancienne avant de lancer la nouvelle (un seul écrivain sur le volume)
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
       placement:
         constraints:
           - node.labels.role == db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smadmin -d sharedmoodle"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks:
       - sharedmoodle_net
 
-  mariadb:
-    image: mariadb:10.11
-    environment:
-      MARIADB_ROOT_PASSWORD: rootpassword
-      MARIADB_DATABASE: moodle
-      MARIADB_USER: moodle
-      MARIADB_PASSWORD: moodlepassword
+  # ============================================================
+  # Supervision (C1, C2)
+  # cadvisor et node-exporter : une copie par nœud (mode global)
+  # prometheus : collecte toutes les 15 s, garde 7 jours, calcule les alertes
+  # grafana : tableaux par établissement et plateforme (grafana.sharedmoodle)
+  # Seul Grafana est publié (par Traefik, avec mot de passe) ; Prometheus
+  # n'a pas de mot de passe et reste sur le réseau interne "monitoring".
+  # ============================================================
+  prometheus:
+    image: kasupremacy/sharedmoodle-prometheus:1.1.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.retention.size=1GB"
     volumes:
-      - mariadb-data:/var/lib/mysql
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - monitoring
     deploy:
+      # 1 seule copie : données sur un volume local du manager
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.05"
+          memory: 128M
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
       placement:
         constraints:
-          - node.labels.role == db
+          - node.labels.role == manager
+
+  grafana:
+    image: kasupremacy/sharedmoodle-grafana:1.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/sm_grafana_admin_password
+      GF_SERVER_ROOT_URL: http://grafana.sharedmoodle
+    secrets:
+      - sm_grafana_admin_password
+    volumes:
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks:
-      - sharedmoodle_net
+      - monitoring
+      - proxy
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          cpus: "0.05"
+          memory: 96M
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+      placement:
+        constraints:
+          - node.labels.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.grafana.rule=Host(`grafana.sharedmoodle`)"
+        - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+        - "traefik.http.services.grafana.loadbalancer.healthcheck.path=/api/health"
+        - "traefik.http.services.grafana.loadbalancer.healthcheck.interval=10s"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    command:
+      - "--docker_only=true"
+      - "--housekeeping_interval=15s"
+      - "--store_container_labels=false"
+      # Étiquettes gardées : service, pile (= établissement sm-<slug>), nœud
+      - "--whitelisted_container_labels=com.docker.swarm.service.name,com.docker.stack.namespace,com.docker.swarm.node.id"
+      - "--disable_metrics=percpu,sched,tcp,udp,disk,diskIO,hugetlb,referenced_memory,cpu_topology,resctrl,process,advtcp,memory_numa"
+    hostname: "{{.Node.Hostname}}"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - monitoring
+    deploy:
+      mode: global
+      resources:
+        limits:
+          cpus: "0.30"
+          memory: 192M
+        reservations:
+          cpus: "0.05"
+          memory: 64M
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker)($$|/)"
+    hostname: "{{.Node.Hostname}}"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9100/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - monitoring
+    deploy:
+      mode: global
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 64M
+        reservations:
+          cpus: "0.02"
+          memory: 16M
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+      restart_policy:
+        condition: any
+        delay: 5s
 
 volumes:
   postgres-data:
-  mariadb-data:
-  moodle-data:
-  moodle-files:
   portainer-data:
+  prometheus-data:
+  grafana-data:
+
+# Secrets créés une fois sur le manager avec scripts/create-secrets.sh
+secrets:
+  sm_postgres_password:
+    external: true
+  sm_jwt_secret:
+    external: true
+  sm_provisioner_token:
+    external: true
+  sm_tenant_master_key:
+    external: true
+  sm_grafana_admin_password:
+    external: true
 
 networks:
   sharedmoodle_net:
     driver: overlay
   proxy:
     external: true
+  # Relie l'API aux bases des établissements (mesure, limites) ; créé ici, utilisé par les piles sm-<slug>
+  admin:
+    driver: overlay
+    attachable: true
+    name: sm_admin
+  # Supervision : Prometheus joint ici cadvisor, node-exporter, l'API et Traefik
+  monitoring:
+    driver: overlay

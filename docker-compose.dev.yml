@@ -1,0 +1,147 @@
+# Lancement local sur le Mac (pas pour le Swarm). Usage : docker compose -f docker-compose.dev.yml up --build
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sharedmoodle
+      POSTGRES_USER: smadmin
+      POSTGRES_PASSWORD: devpassword
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smadmin -d sharedmoodle"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  api:
+    build: ./portal/backend
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://smadmin:devpassword@postgres:5432/sharedmoodle
+      JWT_SECRET: sharedmoodle-local-secret-change-before-production
+      DOMAIN: localhost
+      MOODLE_URL: http://localhost:8081
+      MOODLE_DB_HOST: mariadb
+      MOODLE_DB_NAME: moodle
+      MOODLE_DB_USER: moodle
+      MOODLE_DB_PASSWORD: moodlepassword
+      FRONTEND_ORIGINS: http://localhost:8080
+    command: ["node", "--watch", "src/index.js"]
+    volumes:
+      - ./portal/backend/src:/app/src
+      - ./portal/backend/sql:/app/sql:ro
+      - ./portal/backend/package.json:/app/package.json:ro
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./portal/frontend
+    volumes:
+      - ./portal/frontend:/usr/share/nginx/html:ro
+      - ./portal/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - api
+
+  mariadb:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpassword
+      MARIADB_DATABASE: moodle
+      MARIADB_USER: moodle
+      MARIADB_PASSWORD: moodlepassword
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "127.0.0.1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - mariadb-data:/var/lib/mysql
+
+  moodle:
+    image: bitnamilegacy/moodle:latest
+    environment:
+      MOODLE_DATABASE_TYPE: mariadb
+      MOODLE_DATABASE_HOST: mariadb
+      MOODLE_DATABASE_PORT_NUMBER: 3306
+      MOODLE_DATABASE_NAME: moodle
+      MOODLE_DATABASE_USER: moodle
+      MOODLE_DATABASE_PASSWORD: moodlepassword
+      MOODLE_USERNAME: admin
+      MOODLE_PASSWORD: admin12345
+      MOODLE_EMAIL: admin@sharedmoodle.local
+      MOODLE_SITE_NAME: SharedMoodle Demo
+    ports:
+      - "8081:8080"
+    volumes:
+      - moodle-data:/bitnami/moodle
+      - moodle-files:/bitnami/moodledata
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents(\"http://127.0.0.1:8080/login/index.php\", false, stream_context_create([\"http\" => [\"follow_location\" => 0, \"timeout\" => 5]])) === false ? 1 : 0);"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
+    depends_on:
+      - mariadb
+
+  # ---------- Supervision (optionnelle) ----------
+  # docker compose -f docker-compose.dev.yml --profile monitoring up -d --build
+  # Grafana : http://localhost:3001 (admin / devgrafana) ; Prometheus : http://localhost:9090
+  prometheus:
+    profiles: ["monitoring"]
+    build: ./monitoring/prometheus
+    volumes:
+      - ./monitoring/prometheus/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    profiles: ["monitoring"]
+    build: ./monitoring/grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: devgrafana
+    volumes:
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+  cadvisor:
+    profiles: ["monitoring"]
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    command: ["--docker_only=true", "--housekeeping_interval=15s", "--store_container_labels=false",
+              "--whitelisted_container_labels=com.docker.compose.service,com.docker.compose.project"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+
+volumes:
+  postgres-data:
+  mariadb-data:
+  moodle-data:
+  moodle-files:

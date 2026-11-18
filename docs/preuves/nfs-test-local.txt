@@ -1,0 +1,18 @@
+=== Stockage partagé NFS (E2) : test local 2026-11-18 22:53:35 ===
+Swarm de test (1 nœud DinD) + serveur NFS sm-nfs sur le même réseau Docker
+Provisioner avec NFS_ADDR=sm-nfs, création de l'établissement nfstest :
+volume sm-nfstest_moodle-files : {"device":":/nfstest/moodledata","o":"addr=sm-nfs,rw,nfsvers=4,soft,timeo=100,retrans=3","type":"nfs"}
+volume sm-nfstest_db-data (base, reste local) : driver local
+Montages dans le conteneur Moodle :
+:/nfstest/moodle on /bitnami/moodle type nfs4 
+:/nfstest/moodledata on /bitnami/moodledata type nfs4 
+Fichier écrit par Moodle, vu sur le serveur NFS :
+/nfsshare/nfstest:
+moodle
+moodledata
+
+/nfsshare/nfstest/moodle:
+
+/nfsshare/nfstest/moodledata:
+preuve.txt
+[PASS] fichiers du Moodle sur NFS, dossiers créés par le provisioner

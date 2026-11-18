@@ -1,5 +1,5 @@
 /* ============================================================
-   SharedMoodle — Portail Client
+   SharedMoodle : Portail Client
    ============================================================ */
 
 :root {
@@ -18,6 +18,8 @@
   --danger-soft: #FEF2F2;
   --gold: #F59E0B;
   --gold-soft: #FFFBEB;
+  --platinum: #6D28D9;
+  --platinum-soft: #F5F3FF;
   --border: #E5E7EB;
   --shadow: 0 1px 3px rgba(0,0,0,0.08);
   --radius: 10px;
@@ -41,6 +43,8 @@
     --danger-soft: #450A0A;
     --gold: #FBBF24;
     --gold-soft: #451A03;
+    --platinum: #C4B5FD;
+    --platinum-soft: #2E1065;
     --border: #2D3748;
     --shadow: 0 1px 3px rgba(0,0,0,0.3);
     color-scheme: dark;
@@ -63,6 +67,8 @@
   --danger-soft: #450A0A;
   --gold: #FBBF24;
   --gold-soft: #451A03;
+  --platinum: #C4B5FD;
+  --platinum-soft: #2E1065;
   --border: #2D3748;
   --shadow: 0 1px 3px rgba(0,0,0,0.3);
   color-scheme: dark;
@@ -172,6 +178,7 @@ body {
 
 .badge-free { background: var(--accent-soft); color: var(--accent); }
 .badge-gold { background: var(--gold-soft); color: var(--gold); }
+.badge-platinum { background: var(--platinum-soft); color: var(--platinum); }
 
 /* ---- Barres de progression ---- */
 .progress-group { margin-bottom: 1.25rem; }
@@ -209,6 +216,8 @@ body {
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-gold { background: linear-gradient(135deg, var(--gold), #EF9A1E); color: #fff; }
 .btn-gold:hover { opacity: 0.9; }
+.btn-platinum { background: linear-gradient(135deg, #7C3AED, #4C1D95); color: #fff; }
+.btn-platinum:hover { opacity: 0.9; }
 .btn-outline { background: none; border: 1px solid var(--border); color: var(--fg); }
 .btn-outline:hover { background: var(--accent-soft); border-color: var(--accent); }
 .btn-danger { background: var(--danger); color: #fff; }
@@ -282,6 +291,7 @@ th { font-weight: 600; color: var(--fg-muted); font-size: 0.8rem; text-transform
 
 .plan-card.current { border-color: var(--accent); }
 .plan-card.gold { border-color: var(--gold); }
+.plan-card.platinum { border-color: var(--platinum); }
 
 .plan-name { font-size: 1.25rem; font-weight: 700; margin-bottom: 0.25rem; }
 .plan-price { font-size: 2rem; font-weight: 700; color: var(--accent); }
