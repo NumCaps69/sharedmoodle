@@ -22,7 +22,8 @@ class SharedMoodleAPI {
       credentials: 'include',
     });
 
-    const data = await response.json();
+    // Une erreur du proxy (ex. 413 de nginx) n'est pas du JSON
+    const data = await response.json().catch(() => ({ error: `Erreur ${response.status}` }));
 
     if (response.status === 401) {
       this.clearAuth();
@@ -94,6 +95,33 @@ class SharedMoodleAPI {
 
   async getPlans() {
     return this.request('/plans');
+  }
+
+  // ---- Catalogue de cours partagés ----
+  async getCatalogue({ q = '', discipline = '' } = {}) {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (discipline) params.set('discipline', discipline);
+    return this.request(`/catalogue${params.toString() ? `?${params}` : ''}`);
+  }
+
+  // Le fichier .mbz est envoyé brut, les informations dans l'adresse
+  async publierCours(fichier, meta) {
+    const params = new URLSearchParams({ ...meta, fichier: fichier.name });
+    return this.request(`/catalogue?${params}`, {
+      method: 'POST',
+      body: fichier,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    });
+  }
+
+  async supprimerCours(id) {
+    return this.request(`/catalogue/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  // ---- Administration ----
+  async getEtablissements() {
+    return this.request('/admin/etablissements');
   }
 
   // ---- Helpers ----

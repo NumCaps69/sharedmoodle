@@ -8,6 +8,14 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# Alertes envoyées à Alertmanager (Discord, mail)
+alerting:
+  alertmanagers:
+    - dns_sd_configs:
+        - names: ["tasks.alertmanager"]
+          type: A
+          port: 9093
+
 rule_files:
   - /etc/prometheus/alerts.yml
 
@@ -43,3 +51,10 @@ scrape_configs:
       - names: ["tasks.traefik"]
         type: A
         port: 8082
+
+  # Alertmanager lui-même (notifications envoyées ou en échec)
+  - job_name: alertmanager
+    dns_sd_configs:
+      - names: ["tasks.alertmanager"]
+        type: A
+        port: 9093

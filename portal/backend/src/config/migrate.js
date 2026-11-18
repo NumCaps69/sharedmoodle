@@ -34,6 +34,25 @@ const UPGRADES = [
      date       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
      PRIMARY KEY (client_id, type, moodle_id)
    )`,
+  // Administrateurs de la plateforme (donné par scripts/make-admin.sh, jamais à l'inscription)
+  'ALTER TABLE clients ADD COLUMN IF NOT EXISTS est_admin BOOLEAN NOT NULL DEFAULT FALSE',
+  // Catalogue de cours partagés entre établissements (sauvegardes Moodle .mbz)
+  `CREATE TABLE IF NOT EXISTS cours_partages (
+     id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+     client_id        UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+     titre            VARCHAR(150) NOT NULL,
+     description      TEXT NOT NULL DEFAULT '',
+     discipline       VARCHAR(60) NOT NULL DEFAULT '',
+     niveau           VARCHAR(60) NOT NULL DEFAULT '',
+     licence          VARCHAR(30) NOT NULL,
+     nom_fichier      VARCHAR(200) NOT NULL,
+     taille_octets    INTEGER NOT NULL,
+     sha256           CHAR(64) NOT NULL,
+     fichier          BYTEA NOT NULL,
+     telechargements  INTEGER NOT NULL DEFAULT 0,
+     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   )`,
+  'CREATE INDEX IF NOT EXISTS idx_cours_partages_date ON cours_partages(created_at DESC)',
 ];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

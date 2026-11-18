@@ -1,0 +1,49 @@
+# ============================================================
+# Alertmanager de SharedMoodle : envoie les alertes de Prometheus
+# sur un salon Discord de l'équipe.
+#
+# L'adresse du webhook Discord est un secret (sm_alert_discord_webhook),
+# jamais écrite dans le dépôt. Discord : Paramètres du serveur,
+# Intégrations, Webhooks, Nouveau webhook, Copier l'URL.
+#
+# Mail en plus : voir le bloc "email_configs" en commentaire plus bas.
+# ============================================================
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: equipe
+  # Une notification par alerte et par établissement
+  group_by: [alertname, tenant]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # Alertes critiques : rappel plus fréquent
+    - matchers: [severity = "critical"]
+      receiver: equipe
+      repeat_interval: 1h
+
+# Limite atteinte : inutile d'envoyer aussi "limite proche" pour la même ressource
+inhibit_rules:
+  - source_matchers: [alertname = "EtablissementLimiteAtteinte"]
+    target_matchers: [alertname = "EtablissementLimiteProche"]
+    equal: [tenant, resource]
+
+receivers:
+  - name: equipe
+    discord_configs:
+      - webhook_url_file: /run/secrets/sm_alert_discord_webhook
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}Alerte{{ else }}Résolu{{ end }} : {{ .CommonLabels.alertname }}{{ if .CommonLabels.tenant }} ({{ .CommonLabels.tenant }}){{ end }}'
+        message: |-
+          {{ range .Alerts }}- [{{ .Labels.severity }}] {{ .Annotations.summary }}
+          {{ end }}
+    # Mail : décommenter et remplir (le mot de passe va dans un secret)
+    # email_configs:
+    #   - to: equipe@exemple.fr
+    #     from: alertes@exemple.fr
+    #     smarthost: smtp.exemple.fr:587
+    #     auth_username: alertes@exemple.fr
+    #     auth_password_file: /run/secrets/sm_alert_smtp_password
+    #     send_resolved: true

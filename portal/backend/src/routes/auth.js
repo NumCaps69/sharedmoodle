@@ -12,7 +12,7 @@ const router = express.Router();
 router.get('/me', authMiddleware, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT id, email, nom, organisation, slug, plan, statut
+      `SELECT id, email, nom, organisation, slug, plan, statut, est_admin AS "estAdmin"
        FROM clients WHERE id = $1`,
       [req.user.id]
     );
@@ -163,7 +163,7 @@ router.post(
 
     try {
       const result = await db.query(
-        'SELECT id, email, password_hash, nom, organisation, slug, plan, statut FROM clients WHERE email = $1',
+        'SELECT id, email, password_hash, nom, organisation, slug, plan, statut, est_admin FROM clients WHERE email = $1',
         [email]
       );
 
@@ -214,6 +214,7 @@ router.post(
           organisation: client.organisation,
           slug: client.slug,
           plan: client.plan,
+          estAdmin: client.est_admin,
         },
       });
     } catch (err) {

@@ -1,0 +1,15 @@
+=== 2e nœud app + NFS : basculement du Moodle d'un établissement, test local 2026-11-18 23:48:25 ===
+Swarm DinD : smt-manager (manager), smt-worker1 (app), smt-worker2 (db), smt-worker3 (app, ajouté par scripts/add-node.sh)
+Pile sm-pau déployée avec tenant-stack.yml + tenant-nfs.yml (Moodle remplacé par nginx pour le test)
+
+1. Moodle de pau sur : smt-worker1
+:/pau/moodledata on /bitnami/moodledata type nfs4 
+
+2. Panne : arrêt du conteneur smt-worker1 (23:48:26)
+   Moodle relancé sur : smt-worker3 après 17 s
+smt-worker3 Running Starting 2 seconds ago
+smt-worker1 Shutdown Starting 35 seconds ago
+
+3. Le fichier écrit avant la panne, lu sur smt-worker3 :
+fichier de cours écrit sur smt-worker1
+[PASS] le Moodle a changé de nœud et retrouvé ses fichiers (NFS)

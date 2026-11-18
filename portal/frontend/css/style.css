@@ -328,6 +328,7 @@ th { font-weight: 600; color: var(--fg-muted); font-size: 0.8rem; text-transform
 .status-running { background: var(--success); }
 .status-provisioning { background: var(--warning); animation: pulse 1.5s infinite; }
 .status-error { background: var(--danger); }
+.status-stopped, .status-absent, .status-inconnu, .status-aucun { background: var(--fg-muted); }
 
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 

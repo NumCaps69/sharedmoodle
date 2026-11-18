@@ -1,7 +1,7 @@
 # État du projet SharedMoodle (application et infra)
 
-Dernière mise à jour : 18/11/2026 (nuit)
-Code : `depot-sharedmoodle/` (GitHub NumCaps69/sharedmoodle). Branche à fusionner dans `main` : `supervision-finitions` (contient tout le travail précédent).
+Dernière mise à jour : 19/11/2026
+Code : `depot-sharedmoodle/` (GitHub NumCaps69/sharedmoodle). Tout est sur `main`.
 
 Légende : ✅ fait · 🔶 en cours ou partiel · ⬜ à faire
 
@@ -46,12 +46,16 @@ Légende : ✅ fait · 🔶 en cours ou partiel · ⬜ à faire
 | F33 | E3. README complet (architecture, local, VM, multi-tenant, élasticité, supervision, NFS, tests) | `README.md` |
 | F34 | E4. Tests Swarm : panne d'un nœud, retour, maintenance, quorum | `scripts/test-swarm.sh`, `docs/preuves/` |
 | F35 | Revue du code : 6 bugs corrigés | voir section 6 |
+| F36 | Cours partagés entre établissements (intelligence collective) + catalogue en données ouvertes | `routes/catalogue.js`, page « Cours partagés » |
+| F37 | Page admin : établissements, forfait, état du Moodle, consommation | `routes/admin.js`, page « Admin », `scripts/make-admin.sh` |
+| F38 | Alertes envoyées sur Discord (Alertmanager), mail prévu | `monitoring/alertmanager/`, `scripts/set-discord-webhook.sh` |
+| F39 | 2e nœud « app » : script d'ajout + basculement du Moodle prouvé | `scripts/add-node.sh` |
 
 ## 2. En cours ou partiel 🔶
 
 | # | Élément | Ce qui manque |
 |---|---|---|
-| P1 | Tout F12 à F35 sur la VM | Testé sur le Mac seulement (Swarm jetable en Docker-in-Docker). Kaisse doit publier les images et déployer : section 7 |
+| P1 | Tout F12 à F39 sur la VM | Testé sur le Mac seulement (Swarm jetable en Docker-in-Docker). Kaisse doit publier les images et déployer : section 7 |
 | P2 | NFS sur la VM | Le serveur `sm-nfs` est en image amd64 : testé en local avec une image équivalente. À lancer sur la VM avec `./scripts/setup-nfs.sh` |
 
 ## 3. Étapes
@@ -84,6 +88,12 @@ Légende : ✅ fait · 🔶 en cours ou partiel · ⬜ à faire
 17. ✅ **E3. README**
 18. ✅ **E4. Tests Swarm** : panne, retour, drain, quorum
 
+### Étape F : demandes du 18/11 au soir ✅
+19. ✅ **F1. Partage de cours** entre établissements (catalogue, licences libres, JSON-LD)
+20. ✅ **F2. 2e nœud « app »** : `add-node.sh`, basculement testé (17 s, fichiers gardés)
+21. ✅ **F3. Alertes Discord** (Alertmanager)
+22. ✅ **F4. Page admin**
+
 ---
 
 ## Journal (ce que chaque changement apporte)
@@ -107,6 +117,10 @@ Légende : ✅ fait · 🔶 en cours ou partiel · ⬜ à faire
 | 18/11 | Autoscaler sur Prometheus (C3) | <mark style="background-color:#b7f5c4;color:#000">Décision sur une moyenne d'une minute de tous les nœuds : plus stable que `docker stats` ; test : 2, 3, 4 copies sous charge, puis 3, 2 au repos</mark> |
 | 18/11 | Stockage NFS (E2) | <mark style="background-color:#b7f5c4;color:#000">Les fichiers d'un Moodle ne dépendent plus d'un nœud : il peut redémarrer ailleurs sans les perdre</mark> |
 | 18/11 | Tests Swarm (E4) | <mark style="background-color:#b7f5c4;color:#000">Prouvé : un nœud tombe, ses tâches repartent ailleurs, le portail reste en ligne ; avec 3 managers le cluster survit à la perte d'un manager</mark> |
+| 19/11 | Cours partagés | <mark style="background-color:#b7f5c4;color:#000">Les établissements réutilisent les cours des autres (intelligence collective), sans partager leurs données ; catalogue ouvert en JSON-LD</mark> |
+| 19/11 | Page admin | <mark style="background-color:#b7f5c4;color:#000">L'opérateur voit d'un coup d'œil tous les clients, leur forfait, l'état de leur Moodle et qui approche de sa limite</mark> |
+| 19/11 | Alertes Discord | <mark style="background-color:#b7f5c4;color:#000">L'équipe est prévenue sur Discord dès qu'un établissement atteint 80 % de son forfait ou qu'un service tombe</mark> |
+| 19/11 | 2e nœud app | <mark style="background-color:#b7f5c4;color:#000">Si un nœud tombe, le Moodle de l'établissement repart sur l'autre en ~17 s avec ses fichiers (NFS) : haute disponibilité</mark> |
 
 ## 4. Lancer l'application sur le Mac
 
@@ -132,6 +146,8 @@ Ouvrir :
 - Moodle : http://localhost:8081
 - Grafana : http://localhost:3001 (`admin` / `devgrafana`)
 - Prometheus : http://localhost:9090 (onglet Alerts : alertes de limite)
+- Alertmanager : http://localhost:9093 ; notifications du faux Discord : `docker compose -f docker-compose.dev.yml logs -f alert-receiver`
+- Cours partagés : http://localhost:8080/#catalogue ; page admin : http://localhost:8080/#admin (compte `test@pau.fr`, admin en local)
 
 Tester dans le portail :
 1. S'inscrire (email, mot de passe de 8 caractères, organisation) : forfait FREE
@@ -179,6 +195,11 @@ docker compose -f docker-compose.dev.yml --profile monitoring down
 - **cAdvisor / node-exporter** : <mark style="background-color:#b7f5c4;color:#000">un sur chaque nœud, mesurent le CPU, la mémoire et le réseau des conteneurs et des nœuds</mark>.
 - **Prometheus** : <mark style="background-color:#b7f5c4;color:#000">collecte toutes les mesures toutes les 15 s, les garde 7 jours et déclenche les alertes</mark> ; pas de mot de passe, donc jamais publié.
 - **Grafana** : <mark style="background-color:#b7f5c4;color:#000">affiche les mesures en tableaux, par établissement et pour la plateforme</mark> ; protégé par mot de passe (secret).
+- **Alertmanager** : <mark style="background-color:#b7f5c4;color:#000">envoie les alertes de Prometheus sur le Discord de l'équipe</mark>, une par établissement, puis « Résolu » quand c'est réglé.
+- **Cours partagés** : <mark style="background-color:#b7f5c4;color:#000">intelligence collective : un établissement publie la sauvegarde d'un cours sous licence libre, les autres la restaurent dans leur Moodle</mark> ; les données des établissements restent séparées.
+- **Catalogue JSON-LD** : <mark style="background-color:#b7f5c4;color:#000">le catalogue est publié en données ouvertes liées (schema.org), lisibles par d'autres plateformes</mark>.
+- **Page admin** : <mark style="background-color:#b7f5c4;color:#000">vue de l'opérateur du SaaS sur tous ses clients</mark> ; le droit admin ne se donne qu'en ligne de commande.
+- **2e nœud app** : <mark style="background-color:#b7f5c4;color:#000">deux nœuds peuvent faire tourner les Moodle : si l'un tombe, l'autre prend le relais</mark>.
 - **Métriques de l'API** : <mark style="background-color:#b7f5c4;color:#000">la consommation de chaque client (utilisateurs, cours, stockage) devient visible dans Grafana</mark> : preuve du « service mesuré » du NIST.
 - **2e établissement + isolation** : <mark style="background-color:#b7f5c4;color:#000">prouve la multi-location : chaque client a ses données séparées</mark>.
 - **Création automatique d'un Moodle** : <mark style="background-color:#b7f5c4;color:#000">le client obtient son espace sans intervention humaine (libre-service)</mark>.
@@ -227,6 +248,14 @@ Branches GitHub : `finitions-partiel`, `healthchecks`, `replicas-limites`, `mise
 | 18/11 | Revue du code | provisioner, `metrics.js`, `autoscaler.sh`, `setup-nfs.sh` | <mark style="background-color:#b7f5c4;color:#000">6 bugs corrigés : stockage gardé à l'upgrade, API qui ne plante plus si le port des métriques est pris, test NFS qui continue après un échec, journal CSV, nombre de copies mesuré, tests de santé non comptés</mark> |
 | 18/11 | Textes sans tirets longs | portail, commentaires, preuves | <mark style="background-color:#b7f5c4;color:#000">Documents plus naturels</mark> |
 | 18/11 | Tests | `npm test` (backend 16, provisioner 4), `promtool test rules` | <mark style="background-color:#b7f5c4;color:#000">Tout passe</mark> |
+| 19/11 | Catalogue de cours partagés | `routes/catalogue.js`, `services/catalogue.js`, `migrate.js` (table `cours_partages`), `js/app.js`, `nginx.conf` | <mark style="background-color:#b7f5c4;color:#000">Dépôt d'un `.mbz` (vérifié, 20 Mo max, 20 par établissement), téléchargement compté, retrait par l'auteur, JSON-LD schema.org</mark> |
+| 19/11 | Page admin | `routes/admin.js`, `migrate.js` (colonne `est_admin`), `routes/auth.js`, `js/app.js` | <mark style="background-color:#b7f5c4;color:#000">Liste des établissements avec forfait, état réel de la pile, consommation, blocages, revenu simulé ; droit relu en base à chaque requête</mark> |
+| 19/11 | Droit admin | `scripts/make-admin.sh` | <mark style="background-color:#b7f5c4;color:#000">Seule façon de devenir admin : en ligne de commande, sur un compte existant</mark> |
+| 19/11 | Alertmanager | `monitoring/alertmanager/`, `docker-compose.yml`, `prometheus.yml`, `create-secrets.sh`, `release.sh` | <mark style="background-color:#b7f5c4;color:#000">Alertes sur Discord ; nouveau secret `sm_alert_discord_webhook` ; 6e image à publier</mark> |
+| 19/11 | Webhook Discord | `scripts/set-discord-webhook.sh` | <mark style="background-color:#b7f5c4;color:#000">Changer le webhook sans tout redéployer, et envoyer une alerte de test</mark> |
+| 19/11 | Ajout de nœud | `scripts/add-node.sh` | <mark style="background-color:#b7f5c4;color:#000">Une commande crée un nœud DinD, l'ajoute au Swarm avec son rôle et prépare les images</mark> |
+| 19/11 | Sécurité du portail | `js/app.js` | <mark style="background-color:#b7f5c4;color:#000">Les textes saisis par les utilisateurs (noms, titres de cours) sont échappés avant affichage</mark> |
+| 19/11 | Tests | `test/catalogue.test.js` | <mark style="background-color:#b7f5c4;color:#000">21 tests backend passent</mark> |
 
 ### Résultats des tests (Mac, Swarm jetable)
 
@@ -238,8 +267,11 @@ Branches GitHub : `finitions-partiel`, `healthchecks`, `replicas-limites`, `mise
 | NFS | provisioner crée les dossiers, Moodle monté sur NFS, base en local | `docs/preuves/nfs-test-local.txt` |
 | Panne d'un nœud | nœud vu Down en 12 s, portail toujours en ligne, Moodle lié au seul nœud `app` en attente jusqu'au retour | `docs/preuves/swarm-panne-test-local.txt` |
 | Quorum | 3 managers : 1 en panne, le cluster accepte les changements ; 2 en panne, il les refuse | `docs/preuves/quorum-test-local.txt` |
+| Partage de cours | vraie sauvegarde Moodle déposée, téléchargée (même SHA-256) et restaurée ; 6 refus vérifiés (faux fichier, trop gros, sans compte, autre établissement, non admin) | `docs/preuves/partage-cours-test-local.txt` |
+| Alertes Discord | 4 notifications reçues (limite proche pour 2 établissements, cible en panne, test) | `docs/preuves/alertes-discord-test-local.txt` |
+| 2e nœud app | nœud ajouté par le script ; panne du 1er nœud : Moodle relancé sur le 2e en 17 s, fichier écrit avant la panne retrouvé | `docs/preuves/basculement-noeud-app-test-local.txt` |
 
-Conclusion du test de panne : <mark style="background-color:#b7f5c4;color:#000">avec un seul nœud `app`, le Moodle d'un établissement attend le retour du nœud ; avec 2 nœuds `app` et NFS, il repart tout de suite sur l'autre</mark>.
+Conclusion du test de panne : <mark style="background-color:#b7f5c4;color:#000">avec un seul nœud `app`, le Moodle attend le retour du nœud ; avec 2 nœuds `app` et NFS, il repart sur l'autre en ~17 s avec ses fichiers (prouvé)</mark>.
 
 ### Démos pour la soutenance (sur la VM)
 
@@ -271,10 +303,19 @@ Multi-établissements :
 
 Supervision : ouvrir http://grafana.sharedmoodle, tableau « Établissements », choisir `pau`.
 
-Panne d'un nœud :
+Panne d'un nœud (avec 2 nœuds app, le Moodle change de nœud) :
 ```bash
 ./scripts/test-swarm.sh
 ```
+
+Alerte Discord en direct :
+```bash
+./scripts/set-discord-webhook.sh test
+```
+
+Cours partagés : se connecter avec Pau, déposer un `.mbz` sur http://portail.sharedmoodle/#catalogue, se connecter avec Bayonne, le télécharger et le restaurer dans http://bayonne.sharedmoodle. Montrer http://portail.sharedmoodle/api/catalogue/jsonld.
+
+Page admin : http://portail.sharedmoodle/#admin.
 
 ### Valeurs de test (uniquement pour les tests)
 
@@ -286,6 +327,8 @@ Panne d'un nœud :
 | Admin Moodle local | défini dans `docker-compose.dev.yml` (`MOODLE_USERNAME` / `MOODLE_PASSWORD`) |
 | Admin Moodle d'un établissement (Swarm) | `admin` / mot de passe du compte portail du client |
 | Grafana local | `admin` / `devgrafana` |
+| Admin du portail en local | `test@pau.fr` (donné par `LOCAL=1 ./scripts/make-admin.sh test@pau.fr`) |
+| Sauvegarde Moodle de test | cours `t1-test` sauvegardé avec `admin/cli/backup.php` (déjà dans le catalogue local : « Algèbre L1 (test) ») |
 | Grafana sur la VM | `admin` / valeur de `sm_grafana_admin_password` dans `~/sharedmoodle-secrets.txt` |
 | Secrets de la plateforme sur la VM | `~/sharedmoodle-secrets.txt` sur la VM (ne pas partager dans le groupe) |
 
@@ -308,12 +351,9 @@ cd sharedmoodle
 git fetch origin
 ```
 
-Fusionner le travail dans `main` (aucun conflit : `main` est déjà contenu dans la branche) :
+Le travail est déjà sur `main` :
 ```bash
-git checkout main
-git pull origin main
-git merge --ff-only origin/supervision-finitions
-git push origin main
+git checkout main && git pull origin main
 ```
 
 Se connecter à Docker Hub (compte `kasupremacy`) et préparer buildx (une seule fois) :
@@ -322,12 +362,12 @@ docker login -u kasupremacy
 docker buildx create --name sm-builder --use
 ```
 
-Construire et publier les 5 images en version 1.1.0 (api, frontend, provisioner, prometheus, grafana) :
+Construire et publier les 6 images en version 1.1.0 (api, frontend, provisioner, prometheus, grafana, alertmanager) :
 ```bash
 ./scripts/release.sh 1.1.0
 ```
 
-Vérifier sur Docker Hub : `kasupremacy/sharedmoodle-api`, `-frontend`, `-provisioner`, `-prometheus`, `-grafana` avec le tag `1.1.0`.
+Vérifier sur Docker Hub : `kasupremacy/sharedmoodle-api`, `-frontend`, `-provisioner`, `-prometheus`, `-grafana`, `-alertmanager` avec le tag `1.1.0`.
 
 ### 7.2 Sur la VM : déployer
 
@@ -355,9 +395,9 @@ Réseau public (s'il n'existe pas déjà ; sinon le message « already exists »
 docker exec manager1 docker network create -d overlay --attachable proxy
 ```
 
-Créer les secrets (les secrets déjà présents sont gardés) :
+Créer un webhook Discord (salon de l'équipe : Paramètres du serveur, Intégrations, Webhooks, Nouveau webhook, Copier l'URL), puis créer les secrets (les secrets déjà présents sont gardés) :
 ```bash
-./scripts/create-secrets.sh
+SM_ALERT_DISCORD_WEBHOOK='https://discord.com/api/webhooks/...' ./scripts/create-secrets.sh
 ```
 Attention : PostgreSQL garde le mot de passe choisi à la création de son volume. Si le volume `sharedmoodle_postgres-data` existe déjà, donner l'ancien mot de passe :
 ```bash
@@ -375,7 +415,17 @@ docker exec manager1 docker service ls
 ```
 Toutes les lignes doivent finir par `n/n` (ex. `2/2`). cAdvisor et node-exporter : une copie par nœud.
 
-### 7.3 Stockage NFS (optionnel mais conseillé)
+Donner le droit admin à son compte portail (après s'être inscrit sur http://portail.sharedmoodle) :
+```bash
+./scripts/make-admin.sh ton.email@exemple.fr
+```
+
+Tester les alertes Discord :
+```bash
+./scripts/set-discord-webhook.sh test
+```
+
+### 7.3 Stockage NFS et 2e nœud app (conseillé)
 
 ```bash
 ./scripts/setup-nfs.sh
@@ -383,6 +433,14 @@ Toutes les lignes doivent finir par `n/n` (ex. `2/2`). cAdvisor et node-exporter
 Le script lance `sm-nfs` et vérifie que chaque nœud y écrit. Puis, dans `docker-compose.yml`, service `provisioner`, remplacer `NFS_ADDR: ""` par `NFS_ADDR: sm-nfs` et redéployer :
 ```bash
 docker exec -i manager1 docker stack deploy -c - sharedmoodle < docker-compose.yml
+```
+
+Ajouter le 2e nœud app (adapter CPU et mémoire à ce que la VM peut donner) :
+```bash
+CPUS=2 MEMORY=3g ./scripts/add-node.sh worker3
+```
+```bash
+NODES="manager1 worker1 worker2 worker3" ./scripts/setup-nfs.sh test
 ```
 
 ### 7.4 Poste de démo

@@ -392,6 +392,43 @@ services:
         - "traefik.http.services.grafana.loadbalancer.healthcheck.path=/api/health"
         - "traefik.http.services.grafana.loadbalancer.healthcheck.interval=10s"
 
+  # Envoie les alertes de Prometheus sur Discord (webhook dans un secret)
+  alertmanager:
+    image: kasupremacy/sharedmoodle-alertmanager:1.1.0
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    secrets:
+      - sm_alert_discord_webhook
+    volumes:
+      - alertmanager-data:/alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9093/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - monitoring
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 64M
+        reservations:
+          cpus: "0.02"
+          memory: 24M
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+      restart_policy:
+        condition: any
+        delay: 5s
+      placement:
+        constraints:
+          - node.labels.role == manager
+
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     command:
@@ -470,6 +507,7 @@ volumes:
   portainer-data:
   prometheus-data:
   grafana-data:
+  alertmanager-data:
 
 # Secrets créés une fois sur le manager avec scripts/create-secrets.sh
 secrets:
@@ -482,6 +520,8 @@ secrets:
   sm_tenant_master_key:
     external: true
   sm_grafana_admin_password:
+    external: true
+  sm_alert_discord_webhook:
     external: true
 
 networks:

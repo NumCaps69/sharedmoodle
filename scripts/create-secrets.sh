@@ -21,7 +21,7 @@ MANAGER="${MANAGER:-manager1}"
 OUT="${HOME}/sharedmoodle-secrets.txt"
 # Les secrets de chaque établissement (sm-<slug>_*) sont créés par le provisioner.
 # sm_grafana_admin_password : compte "admin" de Grafana (http://grafana.sharedmoodle)
-SECRETS=(sm_postgres_password sm_jwt_secret sm_provisioner_token sm_tenant_master_key sm_grafana_admin_password)
+SECRETS=(sm_postgres_password sm_jwt_secret sm_provisioner_token sm_tenant_master_key sm_grafana_admin_password sm_alert_discord_webhook)
 
 umask 077
 touch "$OUT"
@@ -33,7 +33,11 @@ for name in "${SECRETS[@]}"; do
   fi
   # Valeur fournie par variable d'environnement (ex. SM_POSTGRES_PASSWORD), sinon aléatoire
   var="$(echo "$name" | tr '[:lower:]' '[:upper:]')"
-  value="${!var:-$(openssl rand -hex 16)}"
+  defaut="$(openssl rand -hex 16)"
+  # Webhook Discord : SM_ALERT_DISCORD_WEBHOOK=https://discord.com/api/webhooks/... ;
+  # sans valeur, les alertes ne partent nulle part (à changer avec scripts/set-discord-webhook.sh)
+  [[ "$name" == "sm_alert_discord_webhook" ]] && defaut="http://127.0.0.1:9/webhook-non-configure"
+  value="${!var:-$defaut}"
   printf '%s' "$value" | docker exec -i "$MANAGER" docker secret create "$name" - >/dev/null
   echo "$name=$value" >> "$OUT"
   echo "créé : $name"

@@ -11,11 +11,13 @@ Projet de groupe, cours Cloud Computing, M1 SIGLIS, UPPA.
 3. [Déployer sur le Swarm](#déployer-sur-le-swarm-vm)
 4. [Un Moodle par établissement](#un-moodle-par-établissement-multi-tenant)
 5. [Élasticité](#élasticité)
-6. [Supervision](#supervision-prometheus-et-grafana)
-7. [Stockage partagé NFS](#stockage-partagé-nfs)
-8. [Tests et preuves](#tests-et-preuves)
-9. [Forfaits](#forfaits)
-10. [Structure du dépôt](#structure-du-dépôt)
+6. [Supervision et alertes](#supervision-prometheus-grafana-alertmanager)
+7. [Stockage partagé NFS et 2e nœud](#stockage-partagé-nfs-et-2e-nœud-app)
+8. [Cours partagés entre établissements](#cours-partagés-entre-établissements)
+9. [Administration](#administration)
+10. [Tests et preuves](#tests-et-preuves)
+11. [Forfaits](#forfaits)
+12. [Structure du dépôt](#structure-du-dépôt)
 
 ## Architecture
 
@@ -30,6 +32,7 @@ portail.sharedmoodle  api.        grafana.     <slug>.sharedmoodle (un par clien
                             └─► bases des établissements (réseau sm_admin : mesure, limites)
 
 Supervision : cAdvisor + node-exporter (chaque nœud) ─► Prometheus ─► Grafana
+                                                        └─► Alertmanager ─► Discord
 ```
 
 | Service | Rôle | Copies |
@@ -40,6 +43,7 @@ Supervision : cAdvisor + node-exporter (chaque nœud) ─► Prometheus ─► G
 | `provisioner` | Seul service qui pilote Docker : crée la pile Moodle de chaque client | 1 (manager) |
 | `postgres` | Base du portail | 1 (nœud `db`) |
 | `prometheus`, `grafana` | Métriques, alertes, tableaux | 1 chacun (manager) |
+| `alertmanager` | Envoie les alertes sur Discord | 1 (manager) |
 | `cadvisor`, `node-exporter` | Métriques des conteneurs et des nœuds | 1 par nœud |
 | `portainer` | Interface web du cluster | 1 (manager) |
 
@@ -67,7 +71,7 @@ Avec la supervision en plus :
 docker compose -f docker-compose.dev.yml --profile monitoring up -d --build
 ```
 
-Grafana : http://localhost:3001 (`admin` / `devgrafana`), Prometheus : http://localhost:9090.
+Grafana : http://localhost:3001 (`admin` / `devgrafana`), Prometheus : http://localhost:9090, Alertmanager : http://localhost:9093. En local, les alertes vont à un faux Discord : `docker compose -f docker-compose.dev.yml logs -f alert-receiver`.
 
 Les dossiers `portal/frontend` et `portal/backend/src` sont montés dans les conteneurs : une modification est visible sans reconstruire. En local il n'y a pas de provisioner : tous les comptes partagent le Moodle de démonstration.
 
@@ -93,7 +97,7 @@ Le cluster est fait de conteneurs Docker-in-Docker (`manager1`, `worker1`, `work
    docker exec manager1 docker network create -d overlay --attachable proxy
    ./scripts/create-secrets.sh
    ```
-   Les valeurs sont gardées dans `~/sharedmoodle-secrets.txt` (dont le mot de passe Grafana).
+   Les valeurs sont gardées dans `~/sharedmoodle-secrets.txt` (dont le mot de passe Grafana). Pour les alertes Discord, donner le webhook dès la création : `SM_ALERT_DISCORD_WEBHOOK='https://discord.com/api/webhooks/...' ./scripts/create-secrets.sh` (ou plus tard : `./scripts/set-discord-webhook.sh '<url>'`).
 4. Déployer :
    ```bash
    docker exec -i manager1 docker stack deploy --prune -c - sharedmoodle < docker-compose.yml
@@ -130,7 +134,7 @@ Le provisioner est le seul service qui accède au socket Docker. Il n'est pas ex
 
 Swarm ne fait pas d'autoscaling seul. `autoscaler.sh` lit le CPU moyen de chaque service dans Prometheus (règle `sharedmoodle:service_cpu_ratio`, moyenne sur 1 minute, tous les nœuds) et appelle `docker service scale`. Sans Prometheus, il revient à `docker stats` (`SOURCE=stats` pour le forcer).
 
-## Supervision (Prometheus et Grafana)
+## Supervision (Prometheus, Grafana, Alertmanager)
 
 - **cAdvisor** et **node-exporter** tournent sur chaque nœud (mode global) : CPU, mémoire, réseau des conteneurs et des nœuds.
 - **L'API** publie la consommation de chaque établissement sur un port interne (`9464`, jamais exposé) : utilisateurs, cours, stockage, limites du forfait, éléments bloqués.
@@ -140,9 +144,11 @@ Swarm ne fait pas d'autoscaling seul. `autoscaler.sh` lit le CPU moyen de chaque
   - *Établissements* : forfait, jauges de consommation, CPU et mémoire du Moodle et de sa base, requêtes, alertes, avec un choix de l'établissement ;
   - *Plateforme* : copies par service (l'autoscaler en action), CPU en % de la limite, mémoire, trafic, nœuds, alertes actives.
 
-Prometheus n'a pas de mot de passe : il reste sur le réseau interne `monitoring`. Seul Grafana est publié.
+- **Alertmanager** envoie chaque alerte sur un salon Discord de l'équipe, une par établissement, avec un message « Résolu » quand elle s'arrête. Une limite atteinte remplace l'avertissement « limite proche ». Le webhook est un Docker secret. Test : `./scripts/set-discord-webhook.sh test`. Le mail est prévu en commentaire dans `monitoring/alertmanager/alertmanager.yml`.
 
-## Stockage partagé NFS
+Prometheus et Alertmanager n'ont pas de mot de passe : ils restent sur le réseau interne `monitoring`. Seul Grafana est publié.
+
+## Stockage partagé NFS et 2e nœud app
 
 Sans NFS, les fichiers d'un Moodle sont sur le disque du nœud où il tourne. Avec NFS, ils sont sur un serveur commun : si le nœud tombe, le Swarm relance le Moodle sur un autre nœud `app` avec les mêmes fichiers.
 
@@ -152,16 +158,48 @@ Sans NFS, les fichiers d'un Moodle sont sur le disque du nœud où il tourne. Av
 
 Puis mettre `NFS_ADDR: sm-nfs` dans le service `provisioner` de `docker-compose.yml` et redéployer. Les nouveaux établissements ont leurs fichiers Moodle sur NFS (`portal/provisioner/tenant-nfs.yml`). Les bases MariaDB restent sur un volume local du nœud `db`, car une base de données sur NFS est déconseillée.
 
+Ajouter un 2e nœud `app`, pour que le Moodle d'un établissement reparte sur l'autre nœud si le sien tombe :
+
+```bash
+./scripts/add-node.sh worker3            # CPUS=2 MEMORY=3g pour fixer ses ressources
+```
+
+Le script crée le conteneur Docker-in-Docker sur le réseau du manager, le fait entrer dans le Swarm, lui met l'étiquette `role=app` et télécharge à l'avance les images Moodle et MariaDB. Test : `NODE=worker1 ./scripts/test-swarm.sh`.
+
+## Cours partagés entre établissements
+
+Les établissements mettent leurs cours en commun (intelligence collective) sans mélanger leurs données : seul le fichier choisi est partagé.
+
+1. Dans son Moodle, l'enseignant sauvegarde le cours (menu **Plus**, **Sauvegarde**, sans les utilisateurs) et télécharge le fichier `.mbz`.
+2. Sur le portail, page **Cours partagés**, il dépose le fichier avec un titre, une discipline, un niveau et une licence libre (Creative Commons).
+3. Un autre établissement le télécharge et le restaure dans son Moodle (**Administration du site**, **Cours**, **Restaurer un cours**).
+
+Le catalogue est public en lecture ; déposer et télécharger demandent un compte. Le serveur vérifie que le fichier est bien une sauvegarde Moodle, limite sa taille (20 Mo, `MAX_COURSE_MB`) et le nombre de cours par établissement (20, `MAX_SHARED_COURSES`), compte les téléchargements et garde l'empreinte SHA-256 du fichier. Seul l'établissement auteur (ou un admin) peut retirer un cours.
+
+Le catalogue est aussi publié en données ouvertes liées (JSON-LD, vocabulaire schema.org `Course`) : `GET /api/catalogue/jsonld`.
+
+## Administration
+
+La page **Admin** du portail liste tous les établissements : forfait, état réel de leur pile Moodle (demandé au provisioner), consommation par rapport au forfait, éléments bloqués, cours partagés, ainsi qu'un résumé (nombre par forfait, revenu mensuel simulé, établissements proches de leur limite).
+
+Aucune page ne permet de devenir admin. Le droit se donne en ligne de commande, sur un compte déjà inscrit :
+
+```bash
+./scripts/make-admin.sh admin@exemple.fr               # sur la VM
+LOCAL=1 ./scripts/make-admin.sh test@pau.fr            # en local
+```
+
 ## Tests et preuves
 
 | Commande | Vérifie |
 |---|---|
-| `cd portal/backend && npm test` | Forfaits, consommation, limites, métriques (16 tests) |
+| `cd portal/backend && npm test` | Forfaits, consommation, limites, métriques, catalogue, admin (21 tests) |
 | `cd portal/provisioner && npm test` | Noms d'établissement, mots de passe dérivés, ressources, NFS (4 tests) |
 | `docker run --rm --entrypoint promtool -v "$PWD/monitoring/prometheus":/c -w /c prom/prometheus:v2.53.2 test rules alerts.test.yml` | Alertes de limite et calcul CPU de l'autoscaler |
 | `./scripts/test-isolation.sh pau bayonne` | Isolation entre deux établissements (réseau, identifiants, secrets, volumes, sites) |
 | `./scripts/test-swarm.sh` | Quorum, maintenance d'un nœud, panne d'un nœud, retour |
 | `./scripts/setup-nfs.sh test` | Chaque nœud écrit sur le serveur NFS |
+| `./scripts/set-discord-webhook.sh test` | Une alerte de test arrive sur Discord |
 
 Résultats déjà obtenus : `docs/preuves/`.
 
@@ -188,7 +226,8 @@ portal/frontend/         Portail web (nginx, transmet /api à l'API)
 portal/provisioner/      Création des piles Moodle (tenant-stack.yml, tenant-nfs.yml)
 monitoring/prometheus/   Configuration, règles et tests des alertes
 monitoring/grafana/      Source de données et tableaux
-scripts/                 Secrets, publication, élasticité, NFS, tests
+monitoring/alertmanager/ Envoi des alertes (Discord)
+scripts/                 Secrets, publication, élasticité, NFS, nœuds, admin, alertes, tests
 docs/preuves/            Résultats des tests
 docker-compose.yml       Pile Docker Swarm
 docker-compose.dev.yml   Lancement local

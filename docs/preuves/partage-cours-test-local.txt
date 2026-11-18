@@ -1,0 +1,19 @@
+=== Partage de cours entre établissements : test local 18/11/2026 ===
+Lancement local (docker-compose.dev.yml), comptes test@pau.fr (Lycee Pau) et conso@pau.fr (College Pau).
+
+1. Sauvegarde Moodle réelle du cours t1-test (admin/cli/backup.php) : 2464 octets, archive gzip
+2. Dépôt par Lycee Pau : POST /api/catalogue -> 201 "Cours ajouté au catalogue"
+3. Refus :
+   [PASS] fichier qui n'est pas une sauvegarde (<?php ...)      -> 400 "pas une sauvegarde Moodle valide"
+   [PASS] fichier de 20 Mo et plus                              -> 413
+   [PASS] dépôt sans connexion                                  -> 401
+   [PASS] téléchargement sans connexion                         -> 401
+   [PASS] retrait du cours par un autre établissement           -> 404 "pas le vôtre"
+   [PASS] page admin pour un compte non admin                   -> 403
+4. Téléchargement par College Pau : 200, fichier identique
+   SHA-256 envoyé  : 3d42089e6c78a82b8ca36c23b65730b50867cff5e1f0028d4f3bc3500420f2a9
+   SHA-256 reçu    : 3d42089e6c78a82b8ca36c23b65730b50867cff5e1f0028d4f3bc3500420f2a9
+5. Restauration du fichier téléchargé dans Moodle (admin/cli/restore_backup.php) :
+   "== Restored course ID: 6 ==" -> nouveau cours "T1 copy 1"
+6. Données ouvertes : GET /api/catalogue/jsonld -> DataCatalog schema.org, cours de type Course,
+   licence https://creativecommons.org/licenses/by-sa/4.0/, sans adresse email

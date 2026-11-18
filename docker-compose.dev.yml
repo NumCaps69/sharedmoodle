@@ -129,6 +129,22 @@ services:
     depends_on:
       - prometheus
 
+  alertmanager:
+    profiles: ["monitoring"]
+    build: ./monitoring/alertmanager
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # En local, les alertes vont au faux Discord ci-dessous
+      - ./monitoring/alertmanager/webhook-dev.txt:/run/secrets/sm_alert_discord_webhook:ro
+    ports:
+      - "9093:9093"
+
+  # Faux Discord : affiche les notifications reçues (docker compose logs alert-receiver)
+  alert-receiver:
+    profiles: ["monitoring"]
+    image: node:20-alpine
+    command: ["node", "-e", "require('http').createServer((q,r)=>{let b='';q.on('data',d=>b+=d);q.on('end',()=>{try{const m=JSON.parse(b);console.log('NOTIFICATION', JSON.stringify({titre:m.embeds?.[0]?.title,message:m.embeds?.[0]?.description}))}catch{console.log(b)}r.writeHead(204).end()})}).listen(8080)"]
+
   cadvisor:
     profiles: ["monitoring"]
     image: gcr.io/cadvisor/cadvisor:v0.49.1

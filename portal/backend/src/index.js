@@ -14,6 +14,8 @@ const { compterRequetes, startMetricsServer } = require('./services/metrics');
 // Routes
 const authRoutes = require('./routes/auth');
 const subscriptionRoutes = require('./routes/subscription');
+const catalogueRoutes = require('./routes/catalogue');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +49,8 @@ app.use((req, res, next) => (req.path === '/api/health' ? next() : generalLimite
 // ============================================================
 app.use('/api/auth', authRoutes);
 app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/catalogue', catalogueRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Liste publique des forfaits (affichée sur l'accueil et la page abonnement)
 app.get('/api/plans', (req, res) => {
@@ -72,6 +76,9 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Fichier trop gros' });
+  }
   console.error('Erreur non gérée:', err);
   res.status(500).json({ error: 'Erreur serveur interne' });
 });

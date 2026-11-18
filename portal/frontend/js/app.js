@@ -18,6 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
     return window.location.hash.slice(1).split('/')[1] || '';
   }
 
+  // Texte venant d'un utilisateur : jamais inséré tel quel dans la page
+  function esc(valeur) {
+    return String(valeur ?? '').replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[c]);
+  }
+
   // ---- Forfaits (lus depuis l'API : /api/plans) ----
   const PLAN_STYLE = {
     FREE: { classe: '', couleur: '', bouton: 'btn-outline' },
@@ -75,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function render() {
     const page = getCurrentPage();
 
-    if (!api.isLoggedIn() && !['home', 'login', 'register'].includes(page)) {
+    if (!api.isLoggedIn() && !['home', 'login', 'register', 'catalogue'].includes(page)) {
       navigate('login');
       return;
     }
@@ -87,6 +94,8 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'dashboard': renderDashboard(); break;
       case 'subscription': renderSubscription(); break;
       case 'upgrade': renderUpgrade(); break;
+      case 'catalogue': renderCatalogue(); break;
+      case 'admin': renderAdmin(); break;
       default: renderHome();
     }
   }
@@ -105,8 +114,11 @@ document.addEventListener('DOMContentLoaded', () => {
           ${isLogged ? `
             <li><a href="#dashboard" class="${activePage === 'dashboard' ? 'active' : ''}">Dashboard</a></li>
             <li><a href="#subscription" class="${activePage === 'subscription' ? 'active' : ''}">Abonnement</a></li>
+            <li><a href="#catalogue" class="${activePage === 'catalogue' ? 'active' : ''}">Cours partagés</a></li>
+            ${client?.estAdmin ? `<li><a href="#admin" class="${activePage === 'admin' ? 'active' : ''}">Admin</a></li>` : ''}
             <li><button onclick="handleLogout()">Déconnexion</button></li>
           ` : `
+            <li><a href="#catalogue" class="${activePage === 'catalogue' ? 'active' : ''}">Cours partagés</a></li>
             <li><a href="#login" class="${activePage === 'login' ? 'active' : ''}">Connexion</a></li>
             <li><a href="#register" class="btn btn-primary" style="color:#fff;padding:0.45rem 1rem;">S'inscrire</a></li>
           `}
@@ -221,8 +233,8 @@ document.addEventListener('DOMContentLoaded', () => {
       ${renderNavbar('dashboard')}
       <div class="container">
         <div class="page-header">
-          <h1>Bonjour, ${client?.nom || 'Client'}</h1>
-          <p>${client?.organisation || ''} · <span class="badge badge-${(client?.plan || 'free').toLowerCase()}">${client?.plan || 'FREE'}</span></p>
+          <h1>Bonjour, ${esc(client?.nom || 'Client')}</h1>
+          <p>${esc(client?.organisation)} · <span class="badge badge-${(client?.plan || 'free').toLowerCase()}">${client?.plan || 'FREE'}</span></p>
         </div>
         <div id="dashboard-content">
           <p style="color:var(--fg-muted);">Chargement...</p>
@@ -417,6 +429,209 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('upgrade-form').addEventListener('submit', handleUpgrade);
+  }
+
+  // ---- Catalogue de cours partagés (intelligence collective) ----
+  function tailleTexte(octets) {
+    return octets >= 1024 * 1024 ? `${(octets / 1024 / 1024).toFixed(1)} Mo` : `${Math.max(1, Math.round(octets / 1024))} Ko`;
+  }
+
+  async function renderCatalogue() {
+    const client = api.getClient();
+    app.innerHTML = `
+      ${renderNavbar('catalogue')}
+      <div class="container">
+        <div class="page-header">
+          <h1>Cours partagés</h1>
+          <p>Les établissements mettent leurs cours en commun, sous licence libre, et les réutilisent dans leur propre Moodle.</p>
+        </div>
+        <div class="card">
+          <form id="catalogue-filtres" style="display:grid;grid-template-columns:2fr 1fr auto;gap:0.75rem;align-items:end;">
+            <div class="form-group" style="margin:0;">
+              <label for="cat-q">Rechercher</label>
+              <input type="search" id="cat-q" class="form-control" placeholder="Titre ou description">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label for="cat-discipline">Discipline</label>
+              <select id="cat-discipline" class="form-control"><option value="">Toutes</option></select>
+            </div>
+            <button type="submit" class="btn btn-outline">Filtrer</button>
+          </form>
+        </div>
+        <div id="catalogue-liste"><p style="color:var(--fg-muted);">Chargement...</p></div>
+        ${client ? `
+          <div class="card">
+            <h2 style="margin-bottom:0.5rem;">Partager un cours</h2>
+            <p style="color:var(--fg-muted);font-size:0.85rem;margin-bottom:1rem;">
+              Dans votre Moodle : ouvrez le cours, menu <strong>Plus</strong> puis <strong>Sauvegarde</strong>,
+              et téléchargez le fichier <code>.mbz</code>. Ne cochez pas les utilisateurs : seul le contenu du cours doit être partagé.
+            </p>
+            <div id="partage-alert"></div>
+            <form id="partage-form">
+              <div class="form-group">
+                <label for="p-titre">Titre</label>
+                <input type="text" id="p-titre" class="form-control" required minlength="3" maxlength="150">
+              </div>
+              <div class="form-group">
+                <label for="p-description">Description</label>
+                <textarea id="p-description" class="form-control" rows="3" maxlength="2000"></textarea>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;">
+                <div class="form-group">
+                  <label for="p-discipline">Discipline</label>
+                  <input type="text" id="p-discipline" class="form-control" maxlength="60" placeholder="Mathématiques">
+                </div>
+                <div class="form-group">
+                  <label for="p-niveau">Niveau</label>
+                  <input type="text" id="p-niveau" class="form-control" maxlength="60" placeholder="Licence 1">
+                </div>
+                <div class="form-group">
+                  <label for="p-licence">Licence</label>
+                  <select id="p-licence" class="form-control"></select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="p-fichier">Sauvegarde Moodle (.mbz)</label>
+                <input type="file" id="p-fichier" class="form-control" accept=".mbz" required>
+                <small id="p-taille" style="color:var(--fg-muted);font-size:0.8rem;"></small>
+              </div>
+              <button type="submit" class="btn btn-primary">Partager</button>
+            </form>
+          </div>` : `
+          <div class="alert alert-info"><a href="#login">Connectez-vous</a> pour télécharger ou partager un cours.</div>`}
+        <p style="color:var(--fg-muted);font-size:0.8rem;">
+          Catalogue en données ouvertes (JSON-LD schema.org) : <a href="/api/catalogue/jsonld" target="_blank">/api/catalogue/jsonld</a>
+        </p>
+      </div>`;
+
+    const charger = async () => {
+      const liste = document.getElementById('catalogue-liste');
+      try {
+        const data = await api.getCatalogue({
+          q: document.getElementById('cat-q').value,
+          discipline: document.getElementById('cat-discipline').value,
+        });
+        const select = document.getElementById('cat-discipline');
+        if (select.options.length === 1) {
+          select.innerHTML += data.disciplines.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+        }
+        const licence = document.getElementById('p-licence');
+        if (licence && !licence.options.length) {
+          licence.innerHTML = data.licences.map((l) => `<option>${esc(l)}</option>`).join('');
+          document.getElementById('p-taille').textContent = `${data.tailleMaxMo} Mo maximum`;
+        }
+        liste.innerHTML = data.cours.length ? `
+          <div class="card table-wrap">
+            <table>
+              <thead><tr><th>Cours</th><th>Établissement</th><th>Licence</th><th>Taille</th><th>Téléchargé</th><th></th></tr></thead>
+              <tbody>${data.cours.map((c) => `
+                <tr>
+                  <td><strong>${esc(c.titre)}</strong>
+                    <div style="color:var(--fg-muted);font-size:0.8rem;">${esc([c.discipline, c.niveau].filter(Boolean).join(' · '))}</div>
+                    ${c.description ? `<div style="font-size:0.85rem;margin-top:0.25rem;">${esc(c.description)}</div>` : ''}</td>
+                  <td>${esc(c.organisation)}</td>
+                  <td>${esc(c.licence)}</td>
+                  <td>${tailleTexte(c.taille_octets)}</td>
+                  <td>${Number(c.telechargements)} fois</td>
+                  <td style="white-space:nowrap;">
+                    ${client ? `<a class="btn btn-outline" href="/api/catalogue/${encodeURIComponent(c.id)}/fichier">Télécharger</a>` : ''}
+                    ${client && (client.slug === c.etablissement || client.estAdmin) ? `<button class="btn btn-outline" data-supprimer="${esc(c.id)}">Retirer</button>` : ''}
+                  </td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+            ${client ? `<p style="color:var(--fg-muted);font-size:0.8rem;margin-top:0.75rem;">
+              Pour l'utiliser : dans votre Moodle, <strong>Administration du site</strong>, <strong>Cours</strong>, <strong>Restaurer un cours</strong>, puis déposez le fichier.</p>` : ''}
+          </div>` : '<div class="card"><p style="color:var(--fg-muted);">Aucun cours partagé pour le moment.</p></div>';
+        liste.querySelectorAll('[data-supprimer]').forEach((b) => b.addEventListener('click', async () => {
+          if (!confirm('Retirer ce cours du catalogue ?')) return;
+          try { await api.supprimerCours(b.dataset.supprimer); charger(); } catch (err) { alert(err.error || 'Erreur'); }
+        }));
+      } catch (err) {
+        liste.innerHTML = `<div class="alert alert-error">Catalogue indisponible : ${esc(err.error || 'serveur injoignable')}</div>`;
+      }
+    };
+
+    document.getElementById('catalogue-filtres').addEventListener('submit', (e) => { e.preventDefault(); charger(); });
+    document.getElementById('partage-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertEl = document.getElementById('partage-alert');
+      const fichier = document.getElementById('p-fichier').files[0];
+      if (!fichier) return;
+      alertEl.innerHTML = '<div class="alert alert-info">Envoi en cours...</div>';
+      try {
+        const data = await api.publierCours(fichier, {
+          titre: document.getElementById('p-titre').value,
+          description: document.getElementById('p-description').value,
+          discipline: document.getElementById('p-discipline').value,
+          niveau: document.getElementById('p-niveau').value,
+          licence: document.getElementById('p-licence').value,
+        });
+        alertEl.innerHTML = `<div class="alert alert-success">${esc(data.message)}</div>`;
+        e.target.reset();
+        charger();
+      } catch (err) {
+        alertEl.innerHTML = `<div class="alert alert-error">${esc(err.error || 'Erreur')}</div>`;
+      }
+    });
+    charger();
+  }
+
+  // ---- Administration de la plateforme ----
+  async function renderAdmin() {
+    if (!api.getClient()?.estAdmin) { navigate('dashboard'); return; }
+    app.innerHTML = `
+      ${renderNavbar('admin')}
+      <div class="container">
+        <div class="page-header">
+          <h1>Administration</h1>
+          <p>Établissements, forfaits et état de leur Moodle</p>
+        </div>
+        <div id="admin-content"><p style="color:var(--fg-muted);">Chargement...</p></div>
+      </div>`;
+
+    const content = document.getElementById('admin-content');
+    try {
+      const { resume, etablissements } = await api.getEtablissements();
+      const jauge = (m, max) => (max === -1 ? `${m.actuel} / illimité` : `${m.actuel} / ${max} (${m.pourcentage} %)`);
+      const couleur = (p) => (p >= 100 ? 'var(--danger)' : p >= 80 ? 'var(--warning)' : 'inherit');
+      content.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-value">${resume.total}</div><div class="stat-label">Établissements</div></div>
+          ${['FREE', 'GOLD', 'PLATINUM'].map((p) => `
+            <div class="stat-card"><div class="stat-value">${resume.parForfait[p] || 0}</div><div class="stat-label">${p}</div></div>`).join('')}
+          <div class="stat-card"><div class="stat-value">${prixTexte(resume.revenuMensuel)}</div><div class="stat-label">Revenu mensuel (simulé)</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:${resume.alertes ? 'var(--warning)' : 'inherit'};">${resume.alertes}</div><div class="stat-label">Proches de leur limite</div></div>
+        </div>
+        <div class="card table-wrap">
+          <table>
+            <thead><tr><th>Établissement</th><th>Forfait</th><th>Moodle</th><th>Utilisateurs</th><th>Cours</th><th>Stockage</th><th>Bloqués</th><th>Partagés</th></tr></thead>
+            <tbody>${etablissements.map((e) => {
+              const etat = e.moodle.etatPile || e.moodle.statut || 'AUCUN';
+              const c = e.consommation;
+              return `
+              <tr>
+                <td><strong>${esc(e.organisation)}</strong>${e.estAdmin ? ' <span class="badge badge-free">admin</span>' : ''}
+                  <div style="color:var(--fg-muted);font-size:0.8rem;">${esc(e.contact.email)} · inscrit le ${new Date(e.creeLe).toLocaleDateString('fr-FR')}</div></td>
+                <td><span class="badge badge-${esc(e.plan.toLowerCase())}">${esc(e.plan)}</span>${e.statut !== 'ACTIVE' ? `<div style="font-size:0.8rem;color:var(--danger);">${esc(e.statut)}</div>` : ''}</td>
+                <td><span class="status-dot status-${esc(etat.toLowerCase())}"></span>${esc(etat)}
+                  ${e.moodle.url ? `<div><a href="${esc(e.moodle.url)}" target="_blank" style="font-size:0.8rem;">${esc(e.moodle.url.replace(/^https?:\/\//, ''))}</a></div>` : ''}</td>
+                <td style="color:${couleur(c.utilisateurs.pourcentage)};">${jauge(c.utilisateurs, c.utilisateurs.max)}</td>
+                <td style="color:${couleur(c.cours.pourcentage)};">${jauge(c.cours, c.cours.max)}</td>
+                <td style="color:${couleur(c.stockage.pourcentage)};">${(c.stockage.utiliseMo / 1024).toFixed(2)} / ${c.stockage.maxGo} Go</td>
+                <td style="color:${e.blocages ? 'var(--danger)' : 'inherit'};">${e.blocages}</td>
+                <td>${e.coursPartages}</td>
+              </tr>`;
+            }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p style="color:var(--fg-muted);font-size:0.8rem;">
+          Détail des ressources (CPU, mémoire, trafic) dans Grafana, tableau « Établissements ».
+        </p>`;
+    } catch (err) {
+      content.innerHTML = `<div class="alert alert-error">${esc(err.error || 'Erreur de chargement')}</div>`;
+    }
   }
 
   // ---- Handlers ----

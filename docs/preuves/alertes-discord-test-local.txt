@@ -1,0 +1,9 @@
+=== Alertes Discord (Alertmanager) : test local 2026-11-18 23:44:13 ===
+Lancement local, profil monitoring : Prometheus -> Alertmanager -> faux Discord (alert-receiver).
+Prometheus voit Alertmanager : http://alertmanager:9093/api/v2/alerts
+Notifications reçues (format Discord : titre + message) :
+NOTIFICATION {"titre":"Alerte : CibleInjoignable","message":"- [critical] cadvisor (cadvisor:8080) ne répond plus à Prometheus\n"}
+NOTIFICATION {"titre":"Alerte : EtablissementLimiteProche (college-pau)","message":"- [warning] college-pau : cours à 80% du forfait FREE\n"}
+NOTIFICATION {"titre":"Alerte : EtablissementLimiteProche (lycee-pau)","message":"- [warning] lycee-pau : cours à 80% du forfait FREE\n"}
+NOTIFICATION {"titre":"Alerte : TestSharedMoodle (test)","message":"- [warning] Test : les alertes SharedMoodle arrivent bien sur Discord\n"}
+[PASS] alertes de limite et de panne envoyées, une par établissement
