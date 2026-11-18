@@ -23,6 +23,10 @@ services:
       JWT_SECRET: sharedmoodle-local-secret-change-before-production
       DOMAIN: localhost
       MOODLE_URL: http://localhost:8081
+      MOODLE_DB_HOST: mariadb
+      MOODLE_DB_NAME: moodle
+      MOODLE_DB_USER: moodle
+      MOODLE_DB_PASSWORD: moodlepassword
       FRONTEND_ORIGINS: http://localhost:8080
     command: ["node", "--watch", "src/index.js"]
     volumes:

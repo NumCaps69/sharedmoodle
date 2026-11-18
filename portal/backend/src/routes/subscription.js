@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { authMiddleware } = require('../middleware/auth');
 const { PLANS, isUpgrade, TEST_CARD } = require('../config/plans');
+const { refreshConsumption, computeAlerts, pourcentage } = require('../services/usage');
 
 const router = express.Router();
 
@@ -39,12 +40,15 @@ router.get('/', async (req, res) => {
 
 // ============================================================
 // GET /api/subscription/consumption — Ma consommation
+// Mesurée dans Moodle à chaque appel, avec alertes de limite
 // ============================================================
 router.get('/consumption', async (req, res) => {
   try {
+    const mesureAJour = await refreshConsumption(req.user.id);
+
     const result = await db.query(
       `SELECT co.nb_utilisateurs, co.nb_cours, co.stockage_utilise_mo, co.derniere_maj,
-              l.max_utilisateurs, l.max_cours, l.stockage_go
+              c.plan, l.max_utilisateurs, l.max_cours, l.stockage_go
        FROM consommation co
        JOIN clients c ON c.id = co.client_id
        JOIN limites l ON l.plan = c.plan
@@ -57,25 +61,32 @@ router.get('/consumption', async (req, res) => {
     }
 
     const data = result.rows[0];
+    const stockageMo = parseFloat(data.stockage_utilise_mo);
+    const consommation = {
+      utilisateurs: {
+        actuel: data.nb_utilisateurs,
+        max: data.max_utilisateurs,
+        pourcentage: pourcentage(data.nb_utilisateurs, data.max_utilisateurs),
+      },
+      cours: {
+        actuel: data.nb_cours,
+        max: data.max_cours === -1 ? 'Illimité' : data.max_cours,
+        pourcentage: pourcentage(data.nb_cours, data.max_cours),
+      },
+      stockage: {
+        utiliseMo: stockageMo,
+        maxGo: data.stockage_go,
+        pourcentage: pourcentage(stockageMo, data.stockage_go * 1024),
+      },
+    };
+
     res.json({
       consommation: {
-        utilisateurs: {
-          actuel: data.nb_utilisateurs,
-          max: data.max_utilisateurs,
-          pourcentage: Math.round((data.nb_utilisateurs / data.max_utilisateurs) * 100),
-        },
-        cours: {
-          actuel: data.nb_cours,
-          max: data.max_cours === -1 ? 'Illimité' : data.max_cours,
-          pourcentage: data.max_cours === -1 ? 0 : Math.round((data.nb_cours / data.max_cours) * 100),
-        },
-        stockage: {
-          utiliseMo: parseFloat(data.stockage_utilise_mo),
-          maxGo: data.stockage_go,
-          pourcentage: Math.round((parseFloat(data.stockage_utilise_mo) / (data.stockage_go * 1024)) * 100),
-        },
+        ...consommation,
         derniereMaj: data.derniere_maj,
+        source: mesureAJour ? 'moodle' : 'derniere-mesure',
       },
+      ...computeAlerts(data.plan, consommation),
     });
   } catch (err) {
     console.error('Erreur récupération consommation:', err);

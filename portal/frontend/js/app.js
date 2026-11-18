@@ -238,6 +238,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const conso = consoData?.consommation;
       const instance = instanceData?.instance;
+      const alertes = consoData?.alertes || [];
+      const miseANiveau = consoData?.miseANiveau;
 
       document.getElementById('dashboard-content').innerHTML = `
         ${instance ? `
@@ -250,6 +252,18 @@ document.addEventListener('DOMContentLoaded', () => {
               </span>
             </div>
             <a href="${instance.url}" target="_blank" class="instance-url">${instance.url}</a>
+          </div>
+        ` : ''}
+
+        ${alertes.map((a) => `
+          <div class="alert ${a.niveau === 'limite' ? 'alert-error' : 'alert-warning'}">${a.message}</div>
+        `).join('')}
+
+        ${miseANiveau ? `
+          <div class="card" style="border-color:var(--${miseANiveau === 'PLATINUM' ? 'platinum' : 'gold'});">
+            <h2 style="margin-bottom:0.5rem;">Vous approchez de vos limites</h2>
+            <p style="margin-bottom:1rem;">Passez en ${miseANiveau} pour augmenter vos limites.</p>
+            <a href="#upgrade/${miseANiveau}" class="btn btn-${miseANiveau.toLowerCase()}">Passer en ${miseANiveau}</a>
           </div>
         ` : ''}
 
@@ -270,7 +284,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         ${conso ? `
           <div class="card">
-            <h2 style="margin-bottom:1rem;">Consommation</h2>
+            <h2 style="margin-bottom:0.25rem;">Consommation</h2>
+            <p style="color:var(--fg-muted);font-size:0.8rem;margin-bottom:1rem;">
+              ${conso.source === 'moodle' ? 'Mesurée dans Moodle' : 'Dernière mesure'} : ${new Date(conso.derniereMaj).toLocaleString('fr-FR')}
+            </p>
             <div class="progress-group">
               <div class="progress-label"><span>Utilisateurs</span><span>${conso.utilisateurs.actuel} / ${conso.utilisateurs.max}</span></div>
               <div class="progress-bar"><div class="progress-fill ${conso.utilisateurs.pourcentage > 90 ? 'danger' : conso.utilisateurs.pourcentage > 70 ? 'warning' : ''}" style="width:${conso.utilisateurs.pourcentage}%"></div></div>
@@ -286,11 +303,11 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         ` : ''}
 
-        ${client?.plan === 'FREE' ? `
+        ${client?.plan === 'FREE' && !miseANiveau ? `
           <div class="card" style="border-color:var(--gold);background:var(--gold-soft);">
             <h2 style="color:var(--gold);margin-bottom:0.5rem;">Passez en GOLD</h2>
             <p style="margin-bottom:1rem;">Débloquez 500 utilisateurs, cours illimités, 20 Go et le support prioritaire.</p>
-            <a href="#upgrade" class="btn btn-gold">Upgrader maintenant</a>
+            <a href="#upgrade/GOLD" class="btn btn-gold">Upgrader maintenant</a>
           </div>
         ` : ''}
       `;
