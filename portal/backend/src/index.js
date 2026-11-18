@@ -16,6 +16,11 @@ const subscriptionRoutes = require('./routes/subscription');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// L'API est derrière 2 proxys (Traefik puis nginx du portail) :
+// sans ce réglage, tous les clients auraient l'adresse du proxy et
+// partageraient la même limite de requêtes.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 2));
+
 // ============================================================
 // Middlewares globaux
 // ============================================================
@@ -32,7 +37,7 @@ app.use(cors({
 app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
 app.use(morgan('combined'));
-app.use(generalLimiter);
+app.use((req, res, next) => (req.path === '/api/health' ? next() : generalLimiter(req, res, next)));
 
 // ============================================================
 // Routes API

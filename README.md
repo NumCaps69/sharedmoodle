@@ -43,6 +43,18 @@ Arrêter : `docker compose -f docker-compose.dev.yml down` (ajouter `-v` pour ef
 
 Aucun mot de passe n'est écrit dans `docker-compose.yml` : les services lisent les Docker secrets montés dans `/run/secrets/`. L'API crée les tables PostgreSQL au démarrage si elles n'existent pas.
 
+## Élasticité (sur la VM)
+
+| Script | Rôle |
+|---|---|
+| `scripts/scale-demo.sh horizontal api 4` | Scalabilité horizontale : passer à 4 copies puis revenir |
+| `scripts/scale-demo.sh vertical api` | Scalabilité verticale d'un service : changer ses limites CPU/mémoire |
+| `scripts/scale-demo.sh noeud worker1` | Scalabilité verticale d'un nœud : changer le CPU/mémoire du conteneur DinD |
+| `scripts/autoscaler.sh` | Ajoute ou retire des copies selon le CPU (70 % / 25 % de la limite) ; journal dans `autoscaler.csv` |
+| `scripts/load-test.sh api 120 50` | Test de charge avec `ab` pour déclencher l'autoscaler |
+
+Swarm ne fait pas d'autoscaling seul : `autoscaler.sh` mesure le CPU des tâches sur chaque nœud (`docker stats`) et appelle `docker service scale`. Exemple de résultat : `docs/preuves/autoscaler-test-local.csv`.
+
 ## Fonctionnement simple
 
 1. Le client s'inscrit sur le portail.
@@ -75,4 +87,4 @@ docker-compose.yml      Pile Docker Swarm
 docker-compose.dev.yml  Lancement local
 ```
 
-À venir : healthchecks, réplicas, autoscaler, supervision (Prometheus/Grafana), un Moodle par client, stockage NFS.
+À venir : supervision (Prometheus/Grafana), un Moodle par client, stockage NFS.
