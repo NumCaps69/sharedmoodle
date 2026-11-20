@@ -144,7 +144,7 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
-      POSTGRES_HOST: postgres
+      POSTGRES_HOST: tasks.postgres
       POSTGRES_DB: sharedmoodle
       POSTGRES_USER: smadmin
       POSTGRES_PASSWORD_FILE: /run/secrets/sm_postgres_password
@@ -152,7 +152,7 @@ services:
       DOMAIN: localhost
       FRONTEND_ORIGINS: http://portail.sharedmoodle
       # Un Moodle par client, créé par le provisioner (pile sm-<slug>)
-      PROVISIONER_URL: http://provisioner:4000
+      PROVISIONER_URL: http://tasks.provisioner:4000
       PROVISIONER_TOKEN_FILE: /run/secrets/sm_provisioner_token
       TENANT_MASTER_KEY_FILE: /run/secrets/sm_tenant_master_key
       TENANT_DOMAIN: sharedmoodle
@@ -283,7 +283,7 @@ services:
         delay: 5s
       placement:
         constraints:
-          - node.labels.role == db
+          - node.role == manager
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U smadmin -d sharedmoodle"]
       interval: 30s
