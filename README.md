@@ -1,9 +1,17 @@
-# SharedMoodle
+# SharedMoodle — Plateforme SaaS Moodle sur Docker Swarm
 
-Plateforme SaaS qui donne à chaque établissement scolaire son propre Moodle, créé à l'inscription, sur un cluster Docker Swarm. Trois forfaits (FREE, GOLD, PLATINUM) fixent les limites et les ressources de chaque Moodle.
+> **Projet de groupe** — Cours de Cloud Computing (M1 SIGLIS)  
+> Université de Pau et des Pays de l'Adour (UPPA) — Anglet  
+> **Équipe :** [Kaisse Belalem](https://github.com/NumCaps69) - [Anir Hamari](https://github.com/AnirHamari) - [Axel Guyot](https://github.com/axel0764) - [Mouhamed Camara](https://github.com/mouha0101) - [Vivien Herrmann](https://github.com/Vivienhrm) - [Ferdinand Guicheteau](https://github.com/ferdinandguicheteau)
 
-Projet de groupe, cours Cloud Computing, M1 SIGLIS, UPPA.
-
+![Docker Swarm](https://img.shields.io/badge/Docker_Swarm-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Traefik](https://img.shields.io/badge/Traefik_v2-24A1C1?style=flat-square&logo=traefikproxy&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=nodedotjs&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
+![MariaDB](https://img.shields.io/badge/MariaDB-003545?style=flat-square&logo=mariadb&logoColor=white)
+![Moodle](https://img.shields.io/badge/Moodle-F98012?style=flat-square&logo=moodle&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-F46800?style=flat-square&logo=grafana&logoColor=white)
 ## Sommaire
 
 1. [Architecture](#architecture)
