@@ -16,6 +16,13 @@ function tenantDomain() {
   return readSetting('TENANT_DOMAIN', { fallback: 'sharedmoodle' });
 }
 
+// "pau.sharedmoodle" -> "pau" ; null pour toute autre adresse
+function slugDepuisHote(hote) {
+  const m = String(hote || '').toLowerCase().match(/^([a-z0-9-]{1,63})\.(.+)$/);
+  if (!m || m[2] !== tenantDomain()) return null;
+  return m[1];
+}
+
 function tenantUrl(slug) {
   return `http://${slug}.${tenantDomain()}`;
 }
@@ -63,6 +70,6 @@ const changeTenantPlan = (slug, plan) => call('PUT', `/tenants/${encodeURICompon
 const tenantStatus = (slug) => call('GET', `/tenants/${encodeURIComponent(slug)}`);
 
 module.exports = {
-  provisionerEnabled, tenantUrl, tenantDbPassword, tenantDbConfig,
+  provisionerEnabled, tenantUrl, slugDepuisHote, tenantDbPassword, tenantDbConfig,
   createTenant, changeTenantPlan, tenantStatus,
 };

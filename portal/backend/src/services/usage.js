@@ -18,7 +18,7 @@ const mysql = require('mysql2/promise');
 const db = require('../config/database');
 const { readSetting } = require('../config/runtime');
 const { nextPlan } = require('../config/plans');
-const { provisionerEnabled, tenantDbConfig } = require('./tenants');
+const { provisionerEnabled, tenantDbConfig, tenantStatus } = require('./tenants');
 
 const ALERTE_SEUIL = 80; // % : avertissement
 const HISTORIQUE_MIN_SECONDES = 300; // une ligne d'historique toutes les 5 min max
@@ -188,11 +188,33 @@ async function refreshConsumption(clientId) {
 
 // Tous les clients actifs, régulièrement (limites appliquées même sans visite du portail)
 async function refreshAll() {
+  await confirmerInstancesPretes();
   const { rows } = await db.query(
     `SELECT c.id FROM clients c JOIN instances_moodle i ON i.client_id = c.id
      WHERE c.statut = 'ACTIVE' AND i.statut = 'RUNNING'`
   );
   for (const { id } of rows) await refreshConsumption(id);
+}
+
+// Moodle encore « en création » : demander au provisioner s'il répond, pour que
+// la mesure (et les alertes) commencent même si le client n'a pas rouvert le portail
+async function confirmerInstancesPretes(clientId = null) {
+  if (!provisionerEnabled()) return;
+  const { rows } = await db.query(
+    `SELECT client_id, slug FROM instances_moodle
+     WHERE statut = 'PROVISIONING' AND docker_stack_name IS NOT NULL AND ($1::uuid IS NULL OR client_id = $1)`,
+    [clientId]
+  );
+  for (const { client_id: id, slug } of rows) {
+    try {
+      const etat = await tenantStatus(slug);
+      if (etat.exists && etat.statut === 'RUNNING') {
+        await db.query("UPDATE instances_moodle SET statut = 'RUNNING' WHERE client_id = $1", [id]);
+      }
+    } catch (err) {
+      console.error(`État du Moodle ${slug} indisponible :`, err.message);
+    }
+  }
 }
 
 function pourcentage(actuel, max) {
@@ -219,5 +241,5 @@ function computeAlerts(plan, conso) {
 }
 
 module.exports = {
-  measureMoodle, refreshConsumption, refreshAll, computeAlerts, pourcentage, ecart, ALERTE_SEUIL,
+  measureMoodle, refreshConsumption, refreshAll, confirmerInstancesPretes, computeAlerts, pourcentage, ecart, ALERTE_SEUIL,
 };

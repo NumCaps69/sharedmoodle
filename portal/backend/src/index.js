@@ -16,6 +16,7 @@ const authRoutes = require('./routes/auth');
 const subscriptionRoutes = require('./routes/subscription');
 const catalogueRoutes = require('./routes/catalogue');
 const adminRoutes = require('./routes/admin');
+const quotaRoutes = require('./routes/quota');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,6 +43,9 @@ app.use(cors({
 app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
 app.use(morgan('combined'));
+// Forfait vu depuis le Moodle de chaque établissement (<slug>.sharedmoodle/sm-quota, via Traefik).
+// Avant la limite générale : chaque page Moodle l'appelle, la route limite elle-même ses mesures.
+app.use('/sm-quota', quotaRoutes);
 app.use((req, res, next) => (req.path === '/api/health' ? next() : generalLimiter(req, res, next)));
 
 // ============================================================
@@ -89,7 +93,7 @@ app.use((err, req, res, next) => {
 if (require.main === module) {
   migrate()
     .then(() => {
-      // Mesure et limites appliquées pour tous les clients, toutes les 5 min
+      // Mesure et limites appliquées pour tous les clients (USAGE_REFRESH_SECONDS, 5 min par défaut)
       const periode = Number(process.env.USAGE_REFRESH_SECONDS || 300) * 1000;
       setInterval(() => refreshAll().catch((e) => console.error('Mesure périodique :', e.message)), periode).unref();
       // Port interne pour Prometheus (non publié) ; 0 = désactivé

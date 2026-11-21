@@ -1,4 +1,4 @@
-=== Isolation pau / bayonne : 2026-11-18 21:11:19 ===
+=== Isolation pau / bayonne : 2026-11-20 13:21:14 ===
 [PASS] réseau : le Moodle de pau joint sa propre base
 [PASS] réseau : le Moodle de pau ne joint pas la base de bayonne
 [PASS] réseau : le Moodle de bayonne ne joint pas la base de pau

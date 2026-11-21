@@ -18,6 +18,22 @@ version: '3.8'
 services:
   moodle:
     image: ${MOODLE_IMAGE:-bitnamilegacy/moodle:latest}
+    # Démarrage normal de Moodle, plus deux réglages ajoutés à son config.php
+    # (et remis s'il est régénéré) :
+    #  - le widget du portail (/sm-quota/widget.js, servi par l'API via Traefik)
+    #    prévient l'admin à 80 % et 100 % du forfait et bloque la création au-delà ;
+    #  - connexion possible avec l'adresse e-mail en plus de l'identifiant.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        sm_patch() {
+          for f in /bitnami/moodle/config.php /opt/bitnami/moodle/config.php; do
+            [ -f "$$f" ] && grep -q 'lib/setup.php' "$$f" && ! grep -q 'sm-quota' "$$f" || continue
+            awk '/lib\/setup.php/ { print "// SharedMoodle : forfait affiché dans Moodle (sm-quota), connexion par e-mail"; print "$$CFG->additionalhtmltopofbody = \047<script src=\"/sm-quota/widget.js\" defer></script>\047;"; print "$$CFG->authloginviaemail = 1;" } { print }' "$$f" > /tmp/sm-config.php && cat /tmp/sm-config.php > "$$f"
+          done
+        }
+        (while true; do sm_patch; sleep 10; done) &
+        exec /opt/bitnami/scripts/moodle/entrypoint.sh /opt/bitnami/scripts/moodle/run.sh
     environment:
       MOODLE_DATABASE_TYPE: mariadb
       MOODLE_DATABASE_HOST: db

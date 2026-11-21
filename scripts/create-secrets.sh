@@ -18,7 +18,7 @@
 set -euo pipefail
 
 MANAGER="${MANAGER:-manager1}"
-OUT="${HOME}/sharedmoodle-secrets.txt"
+OUT="${OUT:-${HOME}/sharedmoodle-secrets.txt}"
 # Les secrets de chaque établissement (sm-<slug>_*) sont créés par le provisioner.
 # sm_grafana_admin_password : compte "admin" de Grafana (http://grafana.sharedmoodle)
 SECRETS=(sm_postgres_password sm_jwt_secret sm_provisioner_token sm_tenant_master_key sm_grafana_admin_password sm_alert_discord_webhook)

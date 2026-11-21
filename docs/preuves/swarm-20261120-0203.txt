@@ -1,0 +1,49 @@
+=== Tests Swarm : 2026-11-20 02:03:09 ===
+ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+cd9stqssuf43c8z30g05yvjvz *   manager1   Ready     Active         Leader           27.5.1
+rero1ht6i8r3q34fkvesxkq98     worker1    Ready     Active                          27.5.1
+zuk10s6yummnjqm9undnr60jx     worker2    Ready     Active                          27.5.1
+
+--- 1. Quorum des managers ---
+[INFO] 1 manager(s) : quorum = 1, pannes de managers supportées = 0
+[INFO] Avec 1 manager, sa panne bloque les changements (déploiement, relance) ; les conteneurs déjà lancés continuent. Avec 3 managers, le cluster en supporte 1 : docker node promote worker1 worker2
+
+--- 2. Panne : arrêt du nœud worker1 ---
+[INFO] tâches sur worker1 avant la panne : 5 (sharedmoodle_cadvisor.rero1ht6i8r3q34fkvesxkq98 sharedmoodle_node-exporter.rero1ht6i8r3q34fkvesxkq98 sm-bayonne_moodle.1 sm-pau_moodle.1 sm-sharedmoodle-1_moodle.1 )
+[PASS] panne : worker1 vu Down par le manager en 6s
+[INFO] panne : services sans autre nœud possible (contrainte de placement) : sm-bayonne_moodle (1 en attente);sm-pau_moodle (1 en attente);sm-sharedmoodle-1_moodle (1 en attente);
+[PASS] panne : le portail répond pendant la panne (HTTP 200)
+
+--- 3. Retour du nœud worker1 ---
+[PASS] retour : worker1 de nouveau Ready en 3s
+[PASS] retour : tous les services ont leurs copies en 30s
+[INFO] le Swarm ne rééquilibre pas seul les copies vers worker1 : docker service update --force <service> si besoin
+
+--- 4. Maintenance : drain de worker2 ---
+[PASS] drain : 6 tâche(s) retirée(s) de worker2 en 0s
+[INFO] drain : services sans autre nœud possible (contrainte de placement) : sharedmoodle_api (2 en attente);sharedmoodle_postgres (1 en attente);sm-bayonne_db (1 en attente);sm-pau_db (1 en attente);sm-sharedmoodle-1_db (1 en attente);
+[PASS] drain : le portail répond (HTTP 200)
+[PASS] maintenance finie : worker2 remis en service, tous les services ont leurs copies en 39s
+
+--- État final ---
+ID             NAME                         MODE         REPLICAS   IMAGE                                      PORTS
+wy44fifzp86v   sharedmoodle_alertmanager    replicated   1/1        sm-local/sharedmoodle-alertmanager:1.1.0   
+hbvjmk9xjbed   sharedmoodle_api             replicated   2/2        sm-local/sharedmoodle-api:1.1.0            
+z79mcdrzw5gc   sharedmoodle_cadvisor        global       3/3        gcr.io/cadvisor/cadvisor:v0.49.1           
+tkaqfq63g7f1   sharedmoodle_frontend        replicated   2/2        sm-local/sharedmoodle-frontend:1.1.0       
+m3m70ahyy7zc   sharedmoodle_grafana         replicated   1/1        sm-local/sharedmoodle-grafana:1.1.0        
+wrsxvfmpbx99   sharedmoodle_node-exporter   global       3/3        prom/node-exporter:v1.8.2                  
+yish8c7dec4r   sharedmoodle_portainer       replicated   1/1        portainer/portainer-ce:latest              
+lgmyiy37ylow   sharedmoodle_postgres        replicated   1/1        postgres:16-alpine                         
+u7a4hwl48lud   sharedmoodle_prometheus      replicated   1/1        sm-local/sharedmoodle-prometheus:1.1.0     
+u1df4wupdm8q   sharedmoodle_provisioner     replicated   1/1        sm-local/sharedmoodle-provisioner:1.1.0    
+qzjgek92c9wm   sharedmoodle_traefik         replicated   1/1        traefik:v2.10                              
+tyg35b1p1ict   sm-alert-receiver            replicated   1/1        node:20-alpine                             
+2qx4pvmi18ft   sm-bayonne_db                replicated   1/1        mariadb:10.11                              
+y2r4wvx103vc   sm-bayonne_moodle            replicated   1/1        bitnamilegacy/moodle:latest                
+zeqmpz4cmqm9   sm-pau_db                    replicated   1/1        mariadb:10.11                              
+mezwnigt3bne   sm-pau_moodle                replicated   1/1        bitnamilegacy/moodle:latest                
+9eq7k3uhtdmh   sm-sharedmoodle-1_db         replicated   1/1        mariadb:10.11                              
+yu8id0t0bhlb   sm-sharedmoodle-1_moodle     replicated   1/1        bitnamilegacy/moodle:latest                
+
+=== 7 réussis, 0 échoués ===

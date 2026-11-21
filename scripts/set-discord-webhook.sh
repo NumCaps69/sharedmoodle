@@ -33,8 +33,10 @@ fi
 
 # Le secret garde le même nom (celui du docker-compose.yml) : on le retire
 # d'Alertmanager, on le recrée avec la nouvelle valeur, puis on le redonne.
-mgr service update --detach=false -q --secret-rm "$NOM" "$SERVICE" >/dev/null
-mgr secret rm "$NOM" >/dev/null
-printf '%s' "$ARG" | mgr secret create "$NOM" - >/dev/null
+# (rien à retirer si une tentative précédente s'est arrêtée en route)
+mgr service update --detach=false -q --secret-rm "$NOM" "$SERVICE" >/dev/null 2>&1 || true
+mgr secret rm "$NOM" >/dev/null 2>&1 || true
+# -i : l'adresse passe par l'entrée standard, jamais dans la ligne de commande
+printf '%s' "$ARG" | docker exec -i "$MANAGER" docker secret create "$NOM" - >/dev/null
 mgr service update --detach=false -q --secret-add "source=$NOM,target=$NOM" "$SERVICE" >/dev/null
 echo "Webhook Discord mis à jour. Tester : $0 test"

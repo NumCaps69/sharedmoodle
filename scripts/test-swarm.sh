@@ -61,6 +61,7 @@ attendre() { # attendre <secondes> <fonction> <args...>
 }
 est_down() { [[ "$(node_status "$1")" == "Down" ]]; }
 est_ready() { [[ "$(node_status "$1")" == "Ready" ]]; }
+services_complets() { [[ -z "$(services_incomplets)" ]]; }
 est_vide() { [[ -z "$(tasks_on "$1")" ]]; }
 
 portail() { curl -s -o /dev/null -w '%{http_code}' -m 5 -H 'Host: portail.sharedmoodle' "http://${TARGET_IP:-127.0.0.1}/"; }
@@ -107,9 +108,12 @@ if t="$(attendre "$WAIT" est_ready "$H")"; then
 else
   resultat FAIL "retour : $H pas Ready après ${WAIT}s"
 fi
-sleep "$SETTLE"
-inc="$(services_incomplets)"
-[[ -z "$inc" ]] && resultat PASS "retour : tous les services ont leurs copies" || resultat FAIL "retour : services incomplets : $(echo "$inc" | tr '\n' ';')"
+if t="$(attendre "$WAIT" services_complets)"; then
+  resultat PASS "retour : tous les services ont leurs copies en ${t}s"
+else
+  inc="$(services_incomplets)"
+  resultat FAIL "retour : services incomplets : $(echo "$inc" | tr '\n' ';')"
+fi
 resultat INFO "le Swarm ne rééquilibre pas seul les copies vers $H : docker service update --force <service> si besoin"
 
 # ---------- 4. Maintenance (drain) ----------
@@ -128,8 +132,11 @@ inc="$(services_incomplets)"
 code="$(portail)"
 [[ "$code" == 200 ]] && resultat PASS "drain : le portail répond (HTTP 200)" || resultat FAIL "drain : le portail répond $code"
 mgr node update --availability active "$D" >/dev/null
-sleep "$SETTLE"
-resultat INFO "$D remis en service (active)"
+if t="$(attendre "$((WAIT * 2))" services_complets)"; then
+  resultat PASS "maintenance finie : $D remis en service, tous les services ont leurs copies en ${t}s"
+else
+  resultat FAIL "maintenance finie : services incomplets : $(services_incomplets | tr '\n' ';')"
+fi
 
 titre "État final"
 mgr service ls | tee -a "$OUT"
